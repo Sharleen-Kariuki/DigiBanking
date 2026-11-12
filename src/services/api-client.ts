@@ -33,7 +33,11 @@ export class ApiClient {
 
   private static async fetchWithTimeout(url: string, init: RequestInit = {}, timeoutMs = 45000): Promise<Response> {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, timeoutMs);
 
     if (init.signal) {
       init.signal.addEventListener('abort', () => controller.abort());
@@ -45,7 +49,7 @@ export class ApiClient {
       return res;
     } catch (err: unknown) {
       clearTimeout(timer);
-      if (err instanceof Error && err.name === 'AbortError') {
+      if (timedOut) {
         throw new ApiError(
           408,
           'TIMEOUT',

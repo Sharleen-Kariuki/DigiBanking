@@ -31,6 +31,8 @@ export interface ChunkedUploaderOptions {
   description?: string;
   file: File;
   idempotencyKey?: string;
+  existingSession?: UploadSession;
+  simulateInterruption?: boolean;
   onStatusChange?: (status: UploaderStatus, message?: string) => void;
   onProgress?: (progress: UploadProgressInfo) => void;
   onComplete?: (session: UploadSession) => void;
@@ -50,10 +52,18 @@ export class ChunkedUploader {
   constructor(options: ChunkedUploaderOptions) {
     this.options = options;
     this.totalChunks = Math.max(1, Math.ceil(this.options.file.size / CHUNK_SIZE));
+    if (options.existingSession) {
+      this.uploadSession = options.existingSession;
+      this.uploadedChunkIndices = new Set(options.existingSession.uploaded_chunks || []);
+    }
   }
 
   public async start(): Promise<UploadSession> {
     try {
+      if (this.uploadSession) {
+        return await this.resume();
+      }
+
       this.setStatus('hashing', 'Computing file SHA-256 checksum...');
       this.fileSha256 = await this.computeSha256(this.options.file);
 
@@ -85,7 +95,7 @@ export class ChunkedUploader {
       return await this.uploadChunks(resumed);
     } catch (err) {
       if (this.status === 'interrupted' || this.status === 'paused') {
-        throw err;
+        return this.uploadSession as UploadSession;
       }
       this.setStatus('error', err instanceof Error ? err.message : 'Upload failed');
       if (this.options.onError) {
@@ -108,6 +118,9 @@ export class ChunkedUploader {
 
       return await this.uploadChunks(true);
     } catch (err) {
+      if (this.status === 'interrupted' || this.status === 'paused') {
+        return this.uploadSession as UploadSession;
+      }
       this.setStatus('error', err instanceof Error ? err.message : 'Failed to resume upload');
       if (this.options.onError) {
         this.options.onError(err instanceof Error ? err : new Error(String(err)));
@@ -117,20 +130,18 @@ export class ChunkedUploader {
   }
 
   public simulateNetworkInterruption(): void {
-    if (this.status !== 'uploading') return;
+    if (this.status === 'completed' || this.status === 'error') return;
     this.setStatus('interrupted', 'Network connection interrupted. Upload paused. You can resume anytime.');
     if (this.abortController) {
       this.abortController.abort();
-      this.abortController = null;
     }
   }
 
   public pause(): void {
-    if (this.status !== 'uploading') return;
+    if (this.status === 'completed' || this.status === 'error') return;
     this.setStatus('paused', 'Upload paused by user.');
     if (this.abortController) {
       this.abortController.abort();
-      this.abortController = null;
     }
   }
 
@@ -150,8 +161,17 @@ export class ChunkedUploader {
         continue;
       }
 
-      if (this.status === 'interrupted' || this.status === 'paused') {
-        throw new Error(this.status === 'interrupted' ? 'Upload interrupted by network simulation' : 'Upload paused');
+      const currentStatus = this.status as UploaderStatus;
+      if (currentStatus === 'interrupted' || currentStatus === 'paused') {
+        throw new Error(currentStatus === 'interrupted' ? 'Upload interrupted by network simulation' : 'Upload paused');
+      }
+
+      if (this.options.simulateInterruption) {
+        await new Promise(r => setTimeout(r, 600));
+        const afterWaitStatus = this.status as UploaderStatus;
+        if (afterWaitStatus === 'interrupted' || afterWaitStatus === 'paused') {
+          throw new Error('Upload interrupted by network simulation');
+        }
       }
 
       const start = chunkIdx * CHUNK_SIZE;
@@ -173,9 +193,16 @@ export class ChunkedUploader {
         this.uploadSession = upload;
         this.uploadedChunkIndices.add(chunkIdx);
         this.emitProgress(uploadId, chunkIdx + 1, totalBytes, isResumed);
+
+        if (this.options.simulateInterruption && !isResumed) {
+          this.options.simulateInterruption = false;
+          this.simulateNetworkInterruption();
+          throw new Error('Upload interrupted by network simulation');
+        }
       } catch (err) {
-        if (this.abortController?.signal.aborted) {
-          const isInterrupted = (this.status as UploaderStatus) === 'interrupted';
+        const catchStatus = this.status as UploaderStatus;
+        if (catchStatus === 'interrupted' || catchStatus === 'paused' || this.abortController?.signal.aborted) {
+          const isInterrupted = catchStatus === 'interrupted';
           throw new Error(isInterrupted ? 'Network connection lost' : 'Upload paused');
         }
         throw err;

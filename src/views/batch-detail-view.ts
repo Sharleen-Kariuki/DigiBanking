@@ -441,6 +441,7 @@ export class BatchDetailView {
           batchName: this.upload!.batch_name,
           description: this.upload!.description,
           file,
+          existingSession: this.upload!,
           onProgress: p => {
             resumeFill.style.width = `${p.percent}%`;
           },
@@ -456,7 +457,7 @@ export class BatchDetailView {
         });
 
         try {
-          await uploader.start();
+          await uploader.resume();
         } catch (e) {
           console.error(e);
         }

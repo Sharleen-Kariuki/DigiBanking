@@ -65,7 +65,6 @@ export class NewBatchModal {
             Completed Spreadsheet (XLSX) <span class="required">*</span>
           </label>
           <div class="file-dropzone" id="file-dropzone" tabindex="0" role="button" aria-label="Drop Excel spreadsheet here or click to browse">
-          
             <div class="dropzone-text" id="dropzone-text">Click to choose file or drag & drop</div>
             <div class="dropzone-subtext" id="dropzone-subtext">Supports Microsoft Excel (.xlsx) workbooks up to 50MB</div>
             <input type="file" id="file-input" accept=".xlsx, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style="display: none;" />
@@ -82,6 +81,18 @@ export class NewBatchModal {
             </div>
             <button type="button" class="btn btn-sm btn-secondary" id="btn-clear-file">Change</button>
           </div>
+        </div>
+
+        <div class="form-group" style="margin-top: 0.5rem;">
+          <label style="display: flex; align-items: flex-start; gap: 0.6rem; cursor: pointer; font-size: 0.85rem; color: var(--neutral-800); background: var(--neutral-50); border: 1px dashed var(--neutral-300); border-radius: var(--radius-md); padding: 0.75rem 0.85rem;">
+            <input type="checkbox" id="chk-simulate-interruption" style="margin-top: 0.15rem;" />
+            <div>
+              <strong style="color: var(--primary);">Simulate network interruption during upload</strong>
+              <div style="font-size: 0.75rem; color: var(--neutral-500); margin-top: 0.15rem;">
+                Step 3 demonstration: Pauses after uploading the first chunk so you can inspect retained state and click "Resume Upload".
+              </div>
+            </div>
+          </label>
         </div>
       </div>
 
@@ -105,7 +116,6 @@ export class NewBatchModal {
         <!-- Walkthrough Interruption Simulation Box -->
         <div id="interruption-banner" style="display: none; background-color: var(--warning-bg); border: 1px solid var(--warning-border); border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1.25rem;">
           <div style="display: flex; gap: 0.75rem;">
-            
             <div>
               <div style="font-weight: 700; font-size: 0.9rem; color: var(--warning-text);">Network Connection Interrupted</div>
               <p style="font-size: 0.8rem; color: var(--warning-text); margin-top: 0.25rem;">
@@ -120,11 +130,11 @@ export class NewBatchModal {
           </div>
         </div>
 
-        // <div style="display: flex; justify-content: center; gap: 0.75rem; margin-top: 1.5rem;">
-        //   <button type="button" class="btn btn-warning btn-sm" id="btn-simulate-interruption">
-        //      Simulate Network Interruption
-        //   </button>
-        // </div>
+        <div style="display: flex; justify-content: center; gap: 0.75rem; margin-top: 1.5rem;" id="simulate-btn-wrap">
+          <button type="button" class="btn btn-warning btn-sm" id="btn-simulate-interruption">
+            <i class="fa-solid fa-bolt" aria-hidden="true"></i> Simulate Network Interruption
+          </button>
+        </div>
       </div>
     `;
 
@@ -140,6 +150,7 @@ export class NewBatchModal {
     const fileNameEl = container.querySelector<HTMLElement>('#selected-file-name')!;
     const fileSizeEl = container.querySelector<HTMLElement>('#selected-file-size')!;
     const clearFileBtn = container.querySelector<HTMLElement>('#btn-clear-file')!;
+    const chkSimulateInterruption = container.querySelector<HTMLInputElement>('#chk-simulate-interruption')!;
 
     const uploadStatusTitle = container.querySelector<HTMLElement>('#upload-status-title')!;
     const uploadStatusDesc = container.querySelector<HTMLElement>('#upload-status-desc')!;
@@ -252,11 +263,13 @@ export class NewBatchModal {
               return;
             }
 
+            const simulateInterruption = chkSimulateInterruption?.checked || false;
+
             // Switch to upload view
             stepForm.style.display = 'none';
             stepUpload.style.display = 'block';
 
-            // Show the simulate button immediately (it will be hidden once upload completes or is interrupted)
+            // Show simulate button
             btnSimulateInterruption.style.display = 'inline-flex';
 
             // Hide footer submit button
@@ -267,6 +280,7 @@ export class NewBatchModal {
               batchName,
               description,
               file: selectedFile,
+              simulateInterruption,
               onStatusChange: (status: UploaderStatus, message?: string) => {
                 if (status === 'interrupted') {
                   uploadStatusTitle.textContent = 'Upload Interrupted';
@@ -274,10 +288,12 @@ export class NewBatchModal {
                   uploadProgressBar.classList.remove('animated');
                   uploadProgressBar.classList.add('warning');
                   interruptionBanner.style.display = 'block';
-                  // btnSimulateInterruption.style.display = 'none';
-                } else if (status === 'uploading') {
-                  uploadStatusTitle.textContent = 'Uploading Chunks...';
-                  uploadStatusDesc.textContent = 'Transferring file chunks to server';
+                  btnSimulateInterruption.style.display = 'none';
+                  btnResumeUpload.disabled = false;
+                  btnResumeUpload.textContent = 'Resume Upload';
+                } else if (status === 'uploading' || status === 'initiating' || status === 'hashing') {
+                  uploadStatusTitle.textContent = status === 'uploading' ? 'Uploading Chunks...' : 'Preparing Upload...';
+                  uploadStatusDesc.textContent = message || 'Transferring file chunks to server';
                   uploadProgressBar.classList.add('animated');
                   uploadProgressBar.classList.remove('warning');
                   interruptionBanner.style.display = 'none';
@@ -285,10 +301,13 @@ export class NewBatchModal {
                 } else if (status === 'completing') {
                   uploadStatusTitle.textContent = 'Verifying File Assembly...';
                   uploadStatusDesc.textContent = 'Server is validating file SHA-256 and initiating validation';
+                  interruptionBanner.style.display = 'none';
                   btnSimulateInterruption.style.display = 'none';
                 } else if (status === 'completed') {
                   uploadStatusTitle.textContent = 'Upload Complete!';
                   uploadStatusDesc.textContent = 'Starting validation stream...';
+                  interruptionBanner.style.display = 'none';
+                  btnSimulateInterruption.style.display = 'none';
                 }
               },
               onProgress: (p: UploadProgressInfo) => {
@@ -325,11 +344,15 @@ export class NewBatchModal {
 
     btnResumeUpload.addEventListener('click', async () => {
       if (this.uploader) {
+        btnResumeUpload.disabled = true;
+        btnResumeUpload.textContent = 'Reconnecting...';
         ToastManager.info('Reconnecting and resuming batch upload...');
         try {
           await this.uploader.resume();
         } catch (err) {
           console.log('Resume error:', err);
+          btnResumeUpload.disabled = false;
+          btnResumeUpload.textContent = 'Resume Upload';
         }
       }
     });
