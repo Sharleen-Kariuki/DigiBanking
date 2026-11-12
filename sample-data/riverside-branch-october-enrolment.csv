@@ -1,0 +1,9 @@
+first_name,last_name,date_of_birth,email,branch,account_type,member_number,phone_number,id_number
+Amina,Njeri,1988-04-12,amina.njeri@example.test,Riverside Branch,personal,MBR-100001,+254700100001,29100001
+Brian,Otieno,1992-09-03,brian.otieno@example.test,Riverside Branch,personal,MBR-100002,+254700100002,29100002
+Wanjiku,Kamau,1985-01-21,wanjiku.kamau@example.test,Riverside Branch,business,MBR-100003,+254700100003,29100003
+Amina,Njeri,1988-04-12,amina.njeri@example.test,Riverside Branch,personal,MBR-100001,+254700100001,29100001
+Charles,Ochieng,1991-05-15,charles.ochieng@example.test,Riverside Branch,personal,MBR-999999,+254799999999,99999999
+David,Otieno,1990-06-30,david.otieno@example.test,Riverside Branch,personal,MBR-100004,+254700100005,29100004
+Faith,Moraa,1990-99-99,faith-not-an-email,Riverside Branch,savings,MBR-100005,+254700100005,29100005
+

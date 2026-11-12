@@ -1,0 +1,21 @@
+{
+  "name": "digibanking-bulk-onboarding",
+  "version": "1.0.0",
+  "description": "Staff-facing bulk digital banking onboarding interface",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "node scripts/verify-client.js",
+    "generate-demo": "node scripts/generate-demo-data.js"
+  },
+  "dependencies": {
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7"
+  }
+}
+
