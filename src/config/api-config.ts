@@ -13,7 +13,7 @@ const envUrl =
   (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() ||
   (import.meta.env.VITE_DEFAULT_URL as string | undefined)?.trim();
 
-const DEFAULT_URL = envUrl || 'https://digibank.fhcl.co.ke/api/v1';
+const DEFAULT_URL = envUrl || 'https://digibanking.onrender.com/api/v1';
 
 class ApiConfigManager {
   private currentBaseUrl: string;
