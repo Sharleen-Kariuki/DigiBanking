@@ -42,7 +42,7 @@ export class SettingsModal {
     const pingBtn = container.querySelector<HTMLButtonElement>('#btn-ping')!;
 
     container.querySelector('#preset-prod')?.addEventListener('click', () => {
-      urlInput.value = 'https://digibank.fhcl.co.ke/api/v1';
+      urlInput.value = 'https://digibanking.onrender.com/api/v1';
     });
 
     container.querySelector('#preset-3000')?.addEventListener('click', () => {

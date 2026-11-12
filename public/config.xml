@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
   <api>
-    <url>https://digibank.fhcl.co.ke/api/v1</url>
+    <url>https://digibanking.onrender.com/api/v1</url>
     <port>3000</port>
   </api>
 </configuration>
