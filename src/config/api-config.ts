@@ -21,9 +21,9 @@ class ApiConfigManager {
 
   constructor() {
     const saved = localStorage.getItem(STORAGE_KEY);
-    // If localStorage has an old localhost URL but DEFAULT_URL is configured to a remote server, upgrade to DEFAULT_URL
+    // If localStorage has an old localhost URL or legacy host but DEFAULT_URL is configured, upgrade to DEFAULT_URL
     if (saved && saved.trim()) {
-      if (saved.includes('localhost') && DEFAULT_URL.startsWith('https://')) {
+      if ((saved.includes('localhost') || saved.includes('fhcl.co.ke')) && DEFAULT_URL.includes('onrender.com')) {
         this.currentBaseUrl = DEFAULT_URL;
         localStorage.setItem(STORAGE_KEY, DEFAULT_URL);
       } else {

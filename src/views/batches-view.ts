@@ -265,7 +265,8 @@ export class BatchesView {
       this.loadBatches();
     });
 
-    await this.loadBatches();
+    // Mount UI immediately and load data asynchronously so router never hangs
+    void this.loadBatches();
     return this.container;
   }
 

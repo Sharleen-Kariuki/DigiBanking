@@ -160,7 +160,8 @@ export class MembersView {
       this.loadMembers();
     });
 
-    await this.loadMembers();
+    // Mount UI immediately and load data asynchronously so router never hangs
+    void this.loadMembers();
     return this.container;
   }
 

@@ -31,6 +31,31 @@ export class ApiClient {
     return url.toString();
   }
 
+  private static async fetchWithTimeout(url: string, init: RequestInit = {}, timeoutMs = 45000): Promise<Response> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    if (init.signal) {
+      init.signal.addEventListener('abort', () => controller.abort());
+    }
+
+    try {
+      const res = await fetch(url, { ...init, signal: controller.signal });
+      clearTimeout(timer);
+      return res;
+    } catch (err: unknown) {
+      clearTimeout(timer);
+      if (err instanceof Error && err.name === 'AbortError') {
+        throw new ApiError(
+          408,
+          'TIMEOUT',
+          `Request to API server timed out (${Math.round(timeoutMs / 1000)}s). If the server is waking up on Render, please click Refresh to retry.`
+        );
+      }
+      throw err;
+    }
+  }
+
   private static async handleXmlResponse(res: Response): Promise<{ text: string; doc: Document }> {
     const text = await res.text();
     let doc: Document;
@@ -50,7 +75,7 @@ export class ApiClient {
 
   public static async listUploads(options?: ODataQueryOptions): Promise<PaginatedResponse<UploadSession>> {
     const url = this.buildUrl('/uploads', options);
-    const res = await fetch(url, {
+    const res = await this.fetchWithTimeout(url, {
       method: 'GET',
       headers: { Accept: 'application/xml, text/xml' }
     });
@@ -60,7 +85,7 @@ export class ApiClient {
 
   public static async getUpload(uploadId: string): Promise<UploadSession> {
     const url = this.buildUrl(`/uploads/${uploadId}`);
-    const res = await fetch(url, {
+    const res = await this.fetchWithTimeout(url, {
       method: 'GET',
       headers: { Accept: 'application/xml, text/xml' }
     });
@@ -76,7 +101,7 @@ export class ApiClient {
     const url = this.buildUrl('/uploads');
     const xmlBody = XmlBuilder.buildUploadRequest(metadata);
 
-    const res = await fetch(url, {
+    const res = await this.fetchWithTimeout(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/xml; charset=utf-8',
@@ -102,7 +127,7 @@ export class ApiClient {
     signal?: AbortSignal
   ): Promise<{ upload: UploadSession; alreadyReceived: boolean }> {
     const url = this.buildUrl(`/uploads/${uploadId}/chunks/${chunkIndex}`);
-    const res = await fetch(url, {
+    const res = await this.fetchWithTimeout(url, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/octet-stream',
@@ -125,7 +150,7 @@ export class ApiClient {
 
   public static async completeUpload(uploadId: string): Promise<{ upload: UploadSession; message?: string }> {
     const url = this.buildUrl(`/uploads/${uploadId}/complete`);
-    const res = await fetch(url, {
+    const res = await this.fetchWithTimeout(url, {
       method: 'POST',
       headers: { Accept: 'application/xml, text/xml' }
     });
@@ -150,7 +175,7 @@ export class ApiClient {
     const url = this.buildUrl(`/uploads/${uploadId}/commit`);
     const xmlBody = XmlBuilder.buildCommitRequest(reviewConfirmed);
 
-    const res = await fetch(url, {
+    const res = await this.fetchWithTimeout(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/xml; charset=utf-8',
@@ -168,7 +193,7 @@ export class ApiClient {
     options?: ODataQueryOptions
   ): Promise<PaginatedResponse<UploadRecord>> {
     const url = this.buildUrl(`/uploads/${uploadId}/records`, options);
-    const res = await fetch(url, {
+    const res = await this.fetchWithTimeout(url, {
       method: 'GET',
       headers: { Accept: 'application/xml, text/xml' }
     });
@@ -191,7 +216,7 @@ export class ApiClient {
     if (filter) url.searchParams.set('$filter', filter);
     if (orderby) url.searchParams.set('$orderby', orderby);
 
-    const res = await fetch(url.toString(), { method: 'GET' });
+    const res = await this.fetchWithTimeout(url.toString(), { method: 'GET' });
     if (!res.ok) {
       const err = await res.text();
       try {
@@ -211,7 +236,7 @@ export class ApiClient {
   public static async downloadInvalidRows(uploadId: string): Promise<void> {
     const base = apiConfig.getBaseUrl();
     const url = `${base}/uploads/${uploadId}/invalid.xlsx`;
-    const res = await fetch(url, { method: 'GET' });
+    const res = await this.fetchWithTimeout(url, { method: 'GET' });
     if (!res.ok) {
       throw new ApiError(res.status, 'DOWNLOAD_FAILED', `Download of invalid rows failed with HTTP ${res.status}`);
     }
@@ -222,7 +247,7 @@ export class ApiClient {
   public static async downloadTemplate(): Promise<void> {
     const base = apiConfig.getBaseUrl();
     const url = `${base}/onboarding/template`;
-    const res = await fetch(url, { method: 'GET' });
+    const res = await this.fetchWithTimeout(url, { method: 'GET' });
     if (!res.ok) {
       throw new ApiError(res.status, 'TEMPLATE_ERROR', `Failed to download onboarding template (HTTP ${res.status})`);
     }
@@ -232,7 +257,7 @@ export class ApiClient {
 
   public static async listMembers(options?: ODataQueryOptions): Promise<PaginatedResponse<Member>> {
     const url = this.buildUrl('/members', options);
-    const res = await fetch(url, {
+    const res = await this.fetchWithTimeout(url, {
       method: 'GET',
       headers: { Accept: 'application/xml, text/xml' }
     });
@@ -243,7 +268,7 @@ export class ApiClient {
 
   public static async getMember(memberId: string): Promise<Member> {
     const url = this.buildUrl(`/members/${memberId}`);
-    const res = await fetch(url, {
+    const res = await this.fetchWithTimeout(url, {
       method: 'GET',
       headers: { Accept: 'application/xml, text/xml' }
     });

@@ -307,7 +307,8 @@ export class BatchDetailView {
     this.container.querySelector('#records-table-slot')?.appendChild(this.dataTable.getElement());
 
     this.bindEvents();
-    await this.loadBatch();
+    // Mount UI immediately and load data asynchronously so router never hangs
+    void this.loadBatch();
 
     return this.container;
   }
