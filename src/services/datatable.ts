@@ -1,22 +1,4 @@
-/**
- * DataTableComponent — wrapper around DataTables 3.1.3 (window.DataTable).
- *
- * Loaded via <script src="/DataTables/datatables.min.js"> in index.html
- * before the TypeScript module bundle runs, so window.DataTable is available.
- *
- * Public API matches the old src/components/data-table.ts exactly so view
- * files only need their import path updated.
- */
-
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
-declare const DataTable: any; // set by datatables.min.js global IIFE
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Column & options types  (same shape as the old data-table.ts)
-// ─────────────────────────────────────────────────────────────────────────────
-
-export interface DataTableColumnDef<T> {
+export interface DataTableColumn<T> {
   id: string;
   header: string;
   accessor?: keyof T | ((row: T) => unknown);
@@ -30,9 +12,9 @@ export interface DataTableColumnDef<T> {
   className?: string;
 }
 
-export interface DataTableComponentOptions<T> {
+export interface DataTableOptions<T> {
   tableId: string;
-  columns: DataTableColumnDef<T>[];
+  columns: DataTableColumn<T>[];
   data?: T[];
   totalRows?: number;
   page?: number;
@@ -43,48 +25,52 @@ export interface DataTableComponentOptions<T> {
   enableColumnToggle?: boolean;
   enablePagination?: boolean;
   initialSort?: { columnId: string; direction: 'asc' | 'desc' };
-  /** Server-side search callback — called on debounced input */
   onSearch?: (query: string) => void;
-  /** Server-side sort callback */
   onSort?: (columnId: string, direction: 'asc' | 'desc', sortKey: string) => void;
-  /** Server-side page callback */
   onPageChange?: (page: number) => void;
-  /** Server-side page-size callback */
   onPageSizeChange?: (pageSize: number) => void;
   onRowClick?: (row: T, index: number) => void;
   emptyTitle?: string;
   emptyMessage?: string;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// DataTableComponent
-// ─────────────────────────────────────────────────────────────────────────────
+export class DataTable<T> {
+  private options: DataTableOptions<T>;
+  private container: HTMLElement;
+  private tableWrapper: HTMLElement;
+  private tableEl: HTMLTableElement;
+  private theadEl: HTMLTableSectionElement;
+  private tbodyEl: HTMLTableSectionElement;
 
-export class DataTableComponent<T extends object> {
-  private opts: Required<DataTableComponentOptions<T>>;
-
-  // DOM
-  private wrapper: HTMLElement;           // outermost div returned by getElement()
+  // Toolbar elements
   private toolbarEl: HTMLElement;
+  private searchInput: HTMLInputElement | null = null;
+  private searchClearBtn: HTMLButtonElement | null = null;
+  private columnToggleBtn: HTMLButtonElement | null = null;
+  private columnPopover: HTMLElement | null = null;
   private customFilterSlot: HTMLElement;
   private customActionsSlot: HTMLElement;
-  private tableEl: HTMLTableElement;
 
-  // DataTables instance
-  private dt: any = null;
+  // Pagination elements
+  private paginationBar: HTMLElement;
+  private pageInfoEl: HTMLElement;
+  private pageControlsEl: HTMLElement;
+  private pageSizeSelect: HTMLSelectElement | null = null;
 
   // State
-  private data: T[] = [];
-  private totalRows = 0;
-  private isLoading = false;
-  private loadingRow: HTMLElement | null = null;
-  private searchDebounce: ReturnType<typeof setTimeout> | null = null;
   private hiddenColumnIds: Set<string> = new Set();
-  /** True while DataTables is initialising — suppresses spurious event callbacks */
-  private initialising = false;
+  private sortColumnId = '';
+  private sortDirection: 'asc' | 'desc' = 'asc';
+  private currentPage = 1;
+  private pageSize = 20;
+  private totalRows = 0;
+  private data: T[] = [];
+  private isLoading = false;
+  private searchDebounceTimer: number | null = null;
+  private documentClickHandler: ((e: MouseEvent) => void) | null = null;
 
-  constructor(options: DataTableComponentOptions<T>) {
-    this.opts = {
+  constructor(options: DataTableOptions<T>) {
+    this.options = {
       enableSearch: true,
       enableColumnToggle: true,
       enablePagination: true,
@@ -92,31 +78,24 @@ export class DataTableComponent<T extends object> {
       searchPlaceholder: 'Search records...',
       emptyTitle: 'No records found',
       emptyMessage: 'No records matched your search or filters.',
-      data: [],
-      totalRows: 0,
-      page: 1,
-      pageSize: 20,
-      onSearch: undefined as any,
-      onSort: undefined as any,
-      onPageChange: undefined as any,
-      onPageSizeChange: undefined as any,
-      onRowClick: undefined as any,
-      initialSort: undefined as any,
-      accessor: undefined as any,
-      ...options,
-    } as unknown as Required<DataTableComponentOptions<T>>;
+      ...options
+    };
 
-    this.data = options.data || [];
+    this.currentPage = options.page || 1;
+    this.pageSize = options.pageSize || 20;
     this.totalRows = options.totalRows || 0;
+    this.data = options.data || [];
 
-    // Load saved hidden columns from localStorage
-    this.loadColumnPrefs();
+    if (options.initialSort) {
+      this.sortColumnId = options.initialSort.columnId;
+      this.sortDirection = options.initialSort.direction;
+    }
 
-    // Build outer wrapper
-    this.wrapper = document.createElement('div');
-    this.wrapper.className = 'datatable-container';
+    this.loadColumnPreferences();
 
-    // Toolbar (search + filter slot + actions + column toggle)
+    this.container = document.createElement('div');
+    this.container.className = 'datatable-container';
+
     this.toolbarEl = document.createElement('div');
     this.toolbarEl.className = 'toolbar datatable-toolbar';
 
@@ -126,47 +105,69 @@ export class DataTableComponent<T extends object> {
     this.customActionsSlot = document.createElement('div');
     this.customActionsSlot.className = 'datatable-actions-slot';
 
-    this.buildToolbar();
+    this.tableWrapper = document.createElement('div');
+    this.tableWrapper.className = 'table-responsive';
 
-    // Table element (DataTables will enhance it)
     this.tableEl = document.createElement('table');
-    this.tableEl.id = `dt-${options.tableId}`;
-    this.tableEl.className = 'data-table display nowrap';
-    this.tableEl.style.width = '100%';
+    this.tableEl.className = 'data-table';
 
-    const tableWrapper = document.createElement('div');
-    tableWrapper.className = 'table-responsive';
-    tableWrapper.appendChild(this.tableEl);
+    this.theadEl = document.createElement('thead');
+    this.tbodyEl = document.createElement('tbody');
 
-    this.wrapper.appendChild(this.toolbarEl);
-    this.wrapper.appendChild(tableWrapper);
+    this.tableEl.appendChild(this.theadEl);
+    this.tableEl.appendChild(this.tbodyEl);
+    this.tableWrapper.appendChild(this.tableEl);
 
-    // Initialise DataTables after the element is in a document fragment
-    // We defer via requestAnimationFrame so callers can append wrapper first.
-    // But views append to DOM immediately, so init inline is safer.
-    this.initDataTable();
+    this.paginationBar = document.createElement('div');
+    this.paginationBar.className = 'pagination-bar datatable-pagination';
+    this.pageInfoEl = document.createElement('div');
+    this.pageControlsEl = document.createElement('div');
+    this.pageControlsEl.className = 'pagination-controls';
+
+    this.buildToolbar();
+    this.buildPagination();
+    this.renderHeader();
+    this.renderBody();
+
+    this.container.appendChild(this.toolbarEl);
+    this.container.appendChild(this.tableWrapper);
+    if (this.options.enablePagination) {
+      this.container.appendChild(this.paginationBar);
+    }
+
+    this.bindDocumentEvents();
   }
 
-  // ── Private: localStorage column prefs ──────────────────────────────────
+  private loadColumnPreferences(): void {
+    this.options.columns.forEach(c => {
+      if (c.hidden) {
+        this.hiddenColumnIds.add(c.id);
+      }
+    });
 
-  private loadColumnPrefs(): void {
-    this.opts.columns.forEach(c => { if (c.hidden) this.hiddenColumnIds.add(c.id); });
     try {
-      const saved = localStorage.getItem(`dt_cols_${this.opts.tableId}`);
+      const saved = localStorage.getItem(`dt_cols_${this.options.tableId}`);
       if (saved) {
         const arr = JSON.parse(saved);
-        if (Array.isArray(arr)) this.hiddenColumnIds = new Set(arr);
+        if (Array.isArray(arr)) {
+          this.hiddenColumnIds = new Set(arr);
+        }
       }
-    } catch { /* ignore */ }
+    } catch {
+      // ignore
+    }
   }
 
-  private saveColumnPrefs(): void {
+  private saveColumnPreferences(): void {
     try {
-      localStorage.setItem(`dt_cols_${this.opts.tableId}`, JSON.stringify([...this.hiddenColumnIds]));
-    } catch { /* ignore */ }
+      localStorage.setItem(
+        `dt_cols_${this.options.tableId}`,
+        JSON.stringify(Array.from(this.hiddenColumnIds))
+      );
+    } catch {
+      // ignore
+    }
   }
-
-  // ── Private: toolbar ────────────────────────────────────────────────────
 
   private buildToolbar(): void {
     this.toolbarEl.innerHTML = '';
@@ -174,57 +175,55 @@ export class DataTableComponent<T extends object> {
     const leftGroup = document.createElement('div');
     leftGroup.className = 'toolbar-group';
 
-    // Search
-    if (this.opts.enableSearch && this.opts.onSearch) {
+    if (this.options.enableSearch) {
       const searchWrap = document.createElement('div');
       searchWrap.className = 'search-input-wrapper datatable-search-wrapper';
 
-      const icon = document.createElement('span');
-      icon.className = 'search-icon';
-      icon.innerHTML = '<i class="fa-solid fa-magnifying-glass"></i>';
+      const searchIcon = document.createElement('span');
+      searchIcon.className = 'search-icon';
+      searchIcon.innerHTML = '<i class="fa-solid fa-magnifying-glass"></i>';
 
-      const input = document.createElement('input');
-      input.type = 'text';
-      input.className = 'search-input';
-      input.placeholder = this.opts.searchPlaceholder;
-      input.setAttribute('aria-label', this.opts.searchPlaceholder);
+      this.searchInput = document.createElement('input');
+      this.searchInput.type = 'text';
+      this.searchInput.className = 'search-input';
+      this.searchInput.placeholder = this.options.searchPlaceholder || 'Search records...';
+      this.searchInput.setAttribute('aria-label', this.options.searchPlaceholder || 'Search records');
 
-      const clearBtn = document.createElement('button');
-      clearBtn.type = 'button';
-      clearBtn.className = 'search-clear-btn';
-      clearBtn.innerHTML = '&times;';
-      clearBtn.title = 'Clear search';
-      clearBtn.style.display = 'none';
+      this.searchClearBtn = document.createElement('button');
+      this.searchClearBtn.type = 'button';
+      this.searchClearBtn.className = 'search-clear-btn';
+      this.searchClearBtn.innerHTML = '&times;';
+      this.searchClearBtn.title = 'Clear search';
+      this.searchClearBtn.style.display = 'none';
 
-      input.addEventListener('input', () => {
-        const val = input.value.trim();
-        clearBtn.style.display = val ? 'block' : 'none';
-        if (this.searchDebounce) clearTimeout(this.searchDebounce);
-        this.searchDebounce = setTimeout(() => {
-          // Always use the server-side onSearch callback when provided
-          // (never delegate to dt.search() to avoid double-firing with the search.dt event)
-          if (this.opts.onSearch) {
-            this.opts.onSearch(val);
-          } else if (this.dt) {
-            this.dt.search(val).draw();
+      this.searchInput.addEventListener('input', () => {
+        const val = this.searchInput?.value.trim() || '';
+        this.searchClearBtn!.style.display = val ? 'block' : 'none';
+
+        if (this.searchDebounceTimer) clearTimeout(this.searchDebounceTimer);
+        this.searchDebounceTimer = window.setTimeout(() => {
+          this.currentPage = 1;
+          if (this.options.onSearch) {
+            this.options.onSearch(val);
           }
-        }, 300);
+        }, 280);
       });
 
-      clearBtn.addEventListener('click', () => {
-        input.value = '';
-        clearBtn.style.display = 'none';
-        if (this.opts.onSearch) {
-          this.opts.onSearch('');
-        } else if (this.dt) {
-          this.dt.search('').draw();
+      this.searchClearBtn.addEventListener('click', () => {
+        if (this.searchInput) {
+          this.searchInput.value = '';
+          this.searchClearBtn!.style.display = 'none';
+          this.currentPage = 1;
+          if (this.options.onSearch) {
+            this.options.onSearch('');
+          }
+          this.searchInput.focus();
         }
-        input.focus();
       });
 
-      searchWrap.appendChild(icon);
-      searchWrap.appendChild(input);
-      searchWrap.appendChild(clearBtn);
+      searchWrap.appendChild(searchIcon);
+      searchWrap.appendChild(this.searchInput);
+      searchWrap.appendChild(this.searchClearBtn);
       leftGroup.appendChild(searchWrap);
     }
 
@@ -234,37 +233,30 @@ export class DataTableComponent<T extends object> {
     rightGroup.className = 'toolbar-group';
     rightGroup.appendChild(this.customActionsSlot);
 
-    // Column toggle
-    if (this.opts.enableColumnToggle) {
+    if (this.options.enableColumnToggle) {
       const colWrap = document.createElement('div');
       colWrap.className = 'column-toggle-wrapper';
       colWrap.style.position = 'relative';
 
-      const toggleBtn = document.createElement('button');
-      toggleBtn.type = 'button';
-      toggleBtn.className = 'btn btn-secondary btn-sm column-toggle-btn';
-      this.updateColToggleBtnLabel(toggleBtn);
+      this.columnToggleBtn = document.createElement('button');
+      this.columnToggleBtn.type = 'button';
+      this.columnToggleBtn.className = 'btn btn-secondary btn-sm column-toggle-btn';
+      this.updateColumnToggleBtnText();
 
-      const popover = document.createElement('div');
-      popover.className = 'column-toggle-popover';
-      popover.style.display = 'none';
-      this.renderColPopover(popover, toggleBtn);
+      this.columnPopover = document.createElement('div');
+      this.columnPopover.className = 'column-toggle-popover';
+      this.columnPopover.style.display = 'none';
 
-      toggleBtn.addEventListener('click', e => {
+      this.renderColumnPopover();
+
+      this.columnToggleBtn.addEventListener('click', e => {
         e.stopPropagation();
-        popover.style.display = popover.style.display === 'block' ? 'none' : 'block';
+        const isOpen = this.columnPopover!.style.display === 'block';
+        this.columnPopover!.style.display = isOpen ? 'none' : 'block';
       });
 
-      document.addEventListener('click', e => {
-        if (popover.style.display === 'block') {
-          if (!popover.contains(e.target as Node) && e.target !== toggleBtn) {
-            popover.style.display = 'none';
-          }
-        }
-      });
-
-      colWrap.appendChild(toggleBtn);
-      colWrap.appendChild(popover);
+      colWrap.appendChild(this.columnToggleBtn);
+      colWrap.appendChild(this.columnPopover);
       rightGroup.appendChild(colWrap);
     }
 
@@ -272,273 +264,361 @@ export class DataTableComponent<T extends object> {
     this.toolbarEl.appendChild(rightGroup);
   }
 
-  private updateColToggleBtnLabel(btn: HTMLButtonElement): void {
-    const hideable = this.opts.columns.filter(c => c.hideable !== false);
-    const visible = hideable.filter(c => !this.hiddenColumnIds.has(c.id)).length;
-    btn.innerHTML = `<i class="fa-solid fa-table-columns"></i> Columns (${visible}/${hideable.length})`;
+  private updateColumnToggleBtnText(): void {
+    if (!this.columnToggleBtn) return;
+    const hideableCols = this.options.columns.filter(c => c.hideable !== false);
+    const visibleCount = hideableCols.filter(c => !this.hiddenColumnIds.has(c.id)).length;
+    this.columnToggleBtn.innerHTML = `<i class="fa-solid fa-table-columns"></i> Columns (${visibleCount}/${hideableCols.length})`;
   }
 
-  private renderColPopover(popover: HTMLElement, toggleBtn: HTMLButtonElement): void {
-    popover.innerHTML = `
+  private renderColumnPopover(): void {
+    if (!this.columnPopover) return;
+    this.columnPopover.innerHTML = `
       <div class="col-popover-header">
-        <span style="font-weight:700;font-size:0.8rem;color:var(--neutral-700);">Toggle Columns</span>
-        <button type="button" class="btn-text-sm" id="btn-col-reset-${this.opts.tableId}" style="font-size:0.75rem;color:var(--primary);cursor:pointer;background:none;border:none;">Reset</button>
+        <span style="font-weight: 700; font-size: 0.8rem; color: var(--neutral-700);">Toggle Columns</span>
+        <button type="button" class="btn-text-sm" id="btn-col-reset" style="font-size: 0.75rem; color: var(--primary); cursor: pointer; background: none; border: none;">Reset</button>
       </div>
-      <div class="col-popover-list" id="col-list-${this.opts.tableId}"></div>
+      <div class="col-popover-list" id="col-popover-items"></div>
     `;
 
-    const listEl = popover.querySelector(`#col-list-${this.opts.tableId}`)!;
-    this.opts.columns.forEach((col, colIdx) => {
+    const listEl = this.columnPopover.querySelector('#col-popover-items')!;
+    this.options.columns.forEach(col => {
       if (col.hideable === false) return;
+
       const item = document.createElement('label');
       item.className = 'col-popover-item';
 
-      const cb = document.createElement('input');
-      cb.type = 'checkbox';
-      cb.checked = !this.hiddenColumnIds.has(col.id);
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = !this.hiddenColumnIds.has(col.id);
+      checkbox.dataset.colId = col.id;
 
-      cb.addEventListener('change', () => {
-        if (cb.checked) {
+      checkbox.addEventListener('change', () => {
+        if (checkbox.checked) {
           this.hiddenColumnIds.delete(col.id);
         } else {
-          const hideable = this.opts.columns.filter(c => c.hideable !== false);
-          const remaining = hideable.filter(c => !this.hiddenColumnIds.has(c.id) && c.id !== col.id);
-          if (remaining.length === 0) { cb.checked = true; return; }
+          const hideable = this.options.columns.filter(c => c.hideable !== false);
+          const remainingVisible = hideable.filter(c => !this.hiddenColumnIds.has(c.id) && c.id !== col.id);
+          if (remainingVisible.length === 0) {
+            checkbox.checked = true;
+            return;
+          }
           this.hiddenColumnIds.add(col.id);
         }
-        this.saveColumnPrefs();
-        this.updateColToggleBtnLabel(toggleBtn);
-        // Toggle DataTables column visibility
-        if (this.dt) {
-          this.dt.column(colIdx).visible(!this.hiddenColumnIds.has(col.id));
-        }
+        this.saveColumnPreferences();
+        this.updateColumnToggleBtnText();
+        this.renderHeader();
+        this.renderBody();
       });
 
       const span = document.createElement('span');
       span.textContent = col.header;
-      item.appendChild(cb);
+
+      item.appendChild(checkbox);
       item.appendChild(span);
       listEl.appendChild(item);
     });
 
-    popover.querySelector(`#btn-col-reset-${this.opts.tableId}`)?.addEventListener('click', () => {
+    this.columnPopover.querySelector('#btn-col-reset')?.addEventListener('click', () => {
       this.hiddenColumnIds.clear();
-      this.opts.columns.forEach(c => { if (c.hidden) this.hiddenColumnIds.add(c.id); });
-      this.saveColumnPrefs();
-      this.updateColToggleBtnLabel(toggleBtn);
-      this.renderColPopover(popover, toggleBtn);
-      if (this.dt) {
-        this.opts.columns.forEach((col, idx) => {
-          this.dt.column(idx).visible(!this.hiddenColumnIds.has(col.id));
-        });
-      }
+      this.options.columns.forEach(c => {
+        if (c.hidden) this.hiddenColumnIds.add(c.id);
+      });
+      this.saveColumnPreferences();
+      this.updateColumnToggleBtnText();
+      this.renderColumnPopover();
+      this.renderHeader();
+      this.renderBody();
     });
   }
 
-  // ── Private: DataTables init ────────────────────────────────────────────
+  private bindDocumentEvents(): void {
+    this.documentClickHandler = (e: MouseEvent) => {
+      if (this.columnPopover && this.columnPopover.style.display === 'block') {
+        const target = e.target as HTMLElement;
+        if (!this.columnPopover.contains(target) && target !== this.columnToggleBtn) {
+          this.columnPopover.style.display = 'none';
+        }
+      }
+    };
+    document.addEventListener('click', this.documentClickHandler);
+  }
 
-  private initDataTable(): void {
-    if (typeof DataTable === 'undefined') {
-      console.error('[DataTableComponent] window.DataTable not found. Ensure datatables.min.js is loaded before the app bundle.');
+  private getVisibleColumns(): DataTableColumn<T>[] {
+    return this.options.columns.filter(c => !this.hiddenColumnIds.has(c.id));
+  }
+
+  private renderHeader(): void {
+    this.theadEl.innerHTML = '';
+    const tr = document.createElement('tr');
+
+    const visibleColumns = this.getVisibleColumns();
+    visibleColumns.forEach(col => {
+      const th = document.createElement('th');
+      if (col.width) th.style.width = col.width;
+      if (col.align) th.style.textAlign = col.align;
+
+      const inner = document.createElement('div');
+      inner.className = 'th-inner';
+      if (col.sortable) {
+        th.classList.add('sortable');
+        th.setAttribute('tabindex', '0');
+        th.setAttribute('role', 'button');
+        th.setAttribute('aria-label', `Sort by ${col.header}`);
+
+        const label = document.createElement('span');
+        label.textContent = col.header;
+
+        const sortIcon = document.createElement('span');
+        sortIcon.className = 'sort-indicator';
+
+        if (this.sortColumnId === col.id) {
+          th.classList.add('sorted', this.sortDirection);
+          sortIcon.textContent = this.sortDirection === 'asc' ? ' ▲' : ' ▼';
+        } else {
+          sortIcon.textContent = ' ↕';
+        }
+
+        inner.appendChild(label);
+        inner.appendChild(sortIcon);
+
+        const handleSort = () => {
+          if (this.sortColumnId === col.id) {
+            this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
+          } else {
+            this.sortColumnId = col.id;
+            this.sortDirection = 'asc';
+          }
+
+          const sortKey = col.sortKey || col.id;
+          if (this.options.onSort) {
+            this.options.onSort(col.id, this.sortDirection, sortKey);
+          }
+          this.renderHeader();
+        };
+
+        th.addEventListener('click', handleSort);
+        th.addEventListener('keydown', e => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            handleSort();
+          }
+        });
+      } else {
+        inner.textContent = col.header;
+      }
+
+      th.appendChild(inner);
+      tr.appendChild(th);
+    });
+
+    this.theadEl.appendChild(tr);
+  }
+
+  public renderBody(): void {
+    this.tbodyEl.innerHTML = '';
+    const visibleColumns = this.getVisibleColumns();
+
+    if (this.isLoading) {
+      const tr = document.createElement('tr');
+      const td = document.createElement('td');
+      td.colSpan = visibleColumns.length;
+      td.style.textAlign = 'center';
+      td.style.padding = '3rem 1rem';
+      td.innerHTML = `
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 0.5rem; color: var(--neutral-500);">
+          <span style="font-size: 1.5rem;"><i class="fa-solid fa-spinner fa-spin"></i></span>
+          <span style="font-weight: 600;">Loading data...</span>
+        </div>
+      `;
+      tr.appendChild(td);
+      this.tbodyEl.appendChild(tr);
       return;
     }
 
-    const cols = this.opts.columns.map((col, _idx) => ({
-      title: col.header,
-      width: col.width || undefined,
-      className: [col.className || '', col.align ? `text-${col.align}` : ''].filter(Boolean).join(' ') || undefined,
-      visible: !this.hiddenColumnIds.has(col.id),
-      orderable: !!col.sortable,
-      render: (data: unknown, type: string, row: T, meta: { row: number }) => {
-        if (type !== 'display') return data !== null && data !== undefined ? String(data) : '';
+    if (this.data.length === 0) {
+      const tr = document.createElement('tr');
+      const td = document.createElement('td');
+      td.colSpan = visibleColumns.length;
+      td.innerHTML = `
+        <div class="empty-state" style="padding: 2.5rem 1rem;">
+          <div class="empty-icon" style="font-size: 2.2rem; margin-bottom: 0.5rem;"><i class="fa-solid fa-magnifying-glass"></i></div>
+          <div class="empty-title" style="font-size: 1.05rem;">${escapeHtml(this.options.emptyTitle || 'No records found')}</div>
+          <div class="empty-description" style="font-size: 0.85rem; max-width: 360px;">${escapeHtml(this.options.emptyMessage || 'No matching entries found.')}</div>
+        </div>
+      `;
+      tr.appendChild(td);
+      this.tbodyEl.appendChild(tr);
+      return;
+    }
+
+    this.data.forEach((row, rowIndex) => {
+      const tr = document.createElement('tr');
+      if (this.options.onRowClick) {
+        tr.style.cursor = 'pointer';
+        tr.addEventListener('click', () => this.options.onRowClick!(row, rowIndex));
+      }
+
+      visibleColumns.forEach(col => {
+        const td = document.createElement('td');
+        if (col.align) td.style.textAlign = col.align;
+        if (col.className) td.className = col.className;
+
         if (col.render) {
-          const rendered = col.render(row, meta.row);
-          if (rendered instanceof HTMLElement) return rendered.outerHTML;
-          return rendered as string;
-        }
-        if (col.accessor) {
-          const val = typeof col.accessor === 'function' ? col.accessor(row) : row[col.accessor];
-          return val !== null && val !== undefined ? escapeHtml(String(val)) : '—';
-        }
-        return data !== null && data !== undefined ? escapeHtml(String(data)) : '—';
-      },
-      data: null as unknown, // we pass full row objects; use render for display
-    }));
-
-    const pageLength = this.opts.pageSize || 20;
-    const pageLengthMenu = this.opts.pageSizeOptions?.length ? this.opts.pageSizeOptions : [10, 20, 50, 100];
-
-    const dtOptions: any = {
-      data: this.data,
-      columns: cols,
-      pageLength,
-      lengthMenu: pageLengthMenu,
-      searching: !!this.opts.enableSearch && !this.opts.onSearch, // let DataTables handle search only when no server-side callback
-      paging: !!this.opts.enablePagination,
-      ordering: true,
-      info: !!this.opts.enablePagination,
-      dom: this.opts.enablePagination
-        ? '<"datatable-info-wrap"i><"datatable-length-wrap"l>t<"datatable-pages-wrap"p>'
-        : 't',
-      language: {
-        search: '',
-        searchPlaceholder: this.opts.searchPlaceholder,
-        emptyTable: this.buildEmptyHtml(),
-        zeroRecords: this.buildEmptyHtml(),
-        infoEmpty: 'Showing 0 to 0 of 0 entries',
-        info: 'Showing _START_ to _END_ of _TOTAL_ entries',
-        lengthMenu: 'Rows per page: _MENU_',
-        paginate: {
-          previous: '‹ Prev',
-          next: 'Next ›',
-        },
-      },
-      createdRow: (row: HTMLElement, _data: T, dataIndex: number) => {
-        if (this.opts.onRowClick) {
-          row.style.cursor = 'pointer';
-          row.addEventListener('click', () => {
-            const rowData = this.dt.row(row).data() as T;
-            this.opts.onRowClick!(rowData, dataIndex);
-          });
-        }
-      },
-    };
-
-    // Set initial sort
-    if (this.opts.initialSort) {
-      const sortColIdx = this.opts.columns.findIndex(c => c.id === this.opts.initialSort.columnId);
-      if (sortColIdx >= 0) {
-        dtOptions.order = [[sortColIdx, this.opts.initialSort.direction]];
-      }
-    }
-
-    // Defer init to next animation frame so the wrapper is in the DOM first.
-    // This prevents DataTables from throwing because the table has no layout.
-    requestAnimationFrame(() => {
-      this.initialising = true;
-      this.dt = new DataTable(this.tableEl, dtOptions);
-      this.initialising = false;
-
-      // Server-side sort: suppress the spurious fire that happens on init
-      if (this.opts.onSort) {
-        this.dt.on('order.dt', () => {
-          if (this.initialising) return;
-          const order = this.dt.order();
-          if (order && order.length > 0) {
-            const [colIdx, dir] = order[0] as [number, string];
-            const col = this.opts.columns[colIdx];
-            if (col && this.opts.onSort) {
-              this.opts.onSort(col.id, dir as 'asc' | 'desc', col.sortKey || col.id);
-            }
+          const rendered = col.render(row, rowIndex);
+          if (typeof rendered === 'string') {
+            td.innerHTML = rendered;
+          } else {
+            td.appendChild(rendered);
           }
-        });
-      }
+        } else if (col.accessor) {
+          let val: unknown;
+          if (typeof col.accessor === 'function') {
+            val = col.accessor(row);
+          } else {
+            val = row[col.accessor];
+          }
+          td.textContent = val !== null && val !== undefined ? String(val) : '—';
+        }
 
-      if (this.opts.onPageChange) {
-        this.dt.on('page.dt', () => {
-          if (this.initialising) return;
-          const info = this.dt.page.info();
-          if (this.opts.onPageChange) this.opts.onPageChange(info.page + 1);
-        });
-      }
+        tr.appendChild(td);
+      });
 
-      if (this.opts.onPageSizeChange) {
-        this.dt.on('length.dt', (_e: Event, _settings: any, len: number) => {
-          if (this.initialising) return;
-          if (this.opts.onPageSizeChange) this.opts.onPageSizeChange(len);
-        });
-      }
-
-      // NOTE: search.dt is NOT wired here — the toolbar input handler calls
-      // onSearch directly (server-side). Wiring both would double-fire every search.
+      this.tbodyEl.appendChild(tr);
     });
+
+    this.updatePagination();
   }
 
-  private buildEmptyHtml(): string {
-    return `<div class="empty-state" style="padding:2.5rem 1rem;text-align:center;">
-      <div class="empty-icon" style="font-size:2.2rem;margin-bottom:0.5rem;"><i class="fa-solid fa-magnifying-glass"></i></div>
-      <div class="empty-title" style="font-size:1.05rem;">${escapeHtml(this.opts.emptyTitle)}</div>
-      <div class="empty-description" style="font-size:0.85rem;max-width:360px;margin:0 auto;">${escapeHtml(this.opts.emptyMessage)}</div>
-    </div>`;
-  }
+  private buildPagination(): void {
+    this.paginationBar.innerHTML = '';
 
-  // ── Public API ───────────────────────────────────────────────────────────
+    const left = document.createElement('div');
+    left.style.display = 'flex';
+    left.style.alignItems = 'center';
+    left.style.gap = '1rem';
+    left.style.flexWrap = 'wrap';
 
-  /** Replace data in the table (mirrors old data-table.ts signature). */
-  public setData(data: T[], totalRows?: number, _page?: number): void {
-    this.data = data;
-    if (totalRows !== undefined) this.totalRows = totalRows;
-    this.isLoading = false;
-    if (this.loadingRow) {
-      this.loadingRow.remove();
-      this.loadingRow = null;
-    }
-    if (this.dt) {
-      this.dt.clear();
-      this.dt.rows.add(data);
-      this.dt.draw(false);
-    } else {
-      // DataTables init is deferred — retry after it finishes
-      requestAnimationFrame(() => {
-        if (this.dt) {
-          this.dt.clear();
-          this.dt.rows.add(this.data);
-          this.dt.draw(false);
+    left.appendChild(this.pageInfoEl);
+
+    if (this.options.pageSizeOptions && this.options.pageSizeOptions.length > 1) {
+      const sizeWrap = document.createElement('div');
+      sizeWrap.style.display = 'flex';
+      sizeWrap.style.alignItems = 'center';
+      sizeWrap.style.gap = '0.35rem';
+      sizeWrap.style.fontSize = '0.8rem';
+      sizeWrap.style.color = 'var(--neutral-600)';
+
+      const label = document.createElement('span');
+      label.textContent = 'Rows per page:';
+
+      this.pageSizeSelect = document.createElement('select');
+      this.pageSizeSelect.className = 'filter-select';
+      this.pageSizeSelect.style.padding = '0.25rem 1.5rem 0.25rem 0.5rem';
+      this.pageSizeSelect.style.fontSize = '0.8rem';
+
+      this.options.pageSizeOptions.forEach(opt => {
+        const o = document.createElement('option');
+        o.value = String(opt);
+        o.textContent = String(opt);
+        if (opt === this.pageSize) o.selected = true;
+        this.pageSizeSelect!.appendChild(o);
+      });
+
+      this.pageSizeSelect.addEventListener('change', () => {
+        this.pageSize = parseInt(this.pageSizeSelect!.value, 10);
+        this.currentPage = 1;
+        if (this.options.onPageSizeChange) {
+          this.options.onPageSizeChange(this.pageSize);
         }
       });
+
+      sizeWrap.appendChild(label);
+      sizeWrap.appendChild(this.pageSizeSelect);
+      left.appendChild(sizeWrap);
     }
+
+    this.paginationBar.appendChild(left);
+    this.paginationBar.appendChild(this.pageControlsEl);
+  }
+
+  private updatePagination(): void {
+    if (!this.options.enablePagination) return;
+
+    const totalPages = Math.max(1, Math.ceil(this.totalRows / this.pageSize));
+    const start = this.totalRows === 0 ? 0 : (this.currentPage - 1) * this.pageSize + 1;
+    const end = Math.min(this.currentPage * this.pageSize, this.totalRows);
+
+    this.pageInfoEl.textContent = `Showing ${start} to ${end} of ${this.totalRows} entries`;
+    this.pageControlsEl.innerHTML = '';
+
+    const prevBtn = document.createElement('button');
+    prevBtn.className = 'page-btn';
+    prevBtn.textContent = '‹ Prev';
+    prevBtn.disabled = this.currentPage <= 1;
+    prevBtn.addEventListener('click', () => {
+      if (this.currentPage > 1) {
+        this.currentPage--;
+        if (this.options.onPageChange) {
+          this.options.onPageChange(this.currentPage);
+        }
+      }
+    });
+    this.pageControlsEl.appendChild(prevBtn);
+
+    for (let p = 1; p <= totalPages; p++) {
+      if (p === 1 || p === totalPages || (p >= this.currentPage - 2 && p <= this.currentPage + 2)) {
+        const pBtn = document.createElement('button');
+        pBtn.className = `page-btn ${p === this.currentPage ? 'active' : ''}`;
+        pBtn.textContent = String(p);
+        pBtn.addEventListener('click', () => {
+          this.currentPage = p;
+          if (this.options.onPageChange) {
+            this.options.onPageChange(p);
+          }
+        });
+        this.pageControlsEl.appendChild(pBtn);
+      }
+    }
+
+    const nextBtn = document.createElement('button');
+    nextBtn.className = 'page-btn';
+    nextBtn.textContent = 'Next ›';
+    nextBtn.disabled = this.currentPage >= totalPages;
+    nextBtn.addEventListener('click', () => {
+      if (this.currentPage < totalPages) {
+        this.currentPage++;
+        if (this.options.onPageChange) {
+          this.options.onPageChange(this.currentPage);
+        }
+      }
+    });
+    this.pageControlsEl.appendChild(nextBtn);
+  }
+
+  // Public API methods
+  public setData(data: T[], totalRows?: number, page?: number): void {
+    this.data = data;
+    if (totalRows !== undefined) this.totalRows = totalRows;
+    if (page !== undefined) this.currentPage = page;
+    this.isLoading = false;
+    this.renderBody();
   }
 
   public setLoading(loading: boolean): void {
     this.isLoading = loading;
-    // If DataTables isn't ready yet the loading state is stored in this.isLoading
-    // and the spinner row is injected once dt fires its first draw.
-    if (!this.dt) return;
-
-    if (loading) {
-      this.dt.clear().draw(false);
-      const tbody = this.tableEl.querySelector('tbody');
-      if (tbody) {
-        const colCount = this.opts.columns.filter(c => !this.hiddenColumnIds.has(c.id)).length;
-        const tr = document.createElement('tr');
-        const td = document.createElement('td');
-        td.colSpan = colCount;
-        td.style.textAlign = 'center';
-        td.style.padding = '3rem 1rem';
-        td.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;gap:0.5rem;color:var(--neutral-500);">
-          <span style="font-size:1.5rem;"><i class="fa-solid fa-spinner fa-spin"></i></span>
-          <span style="font-weight:600;">Loading data...</span>
-        </div>`;
-        tr.appendChild(td);
-        this.loadingRow = tr;
-        tbody.insertBefore(tr, tbody.firstChild);
-      }
-    } else {
-      if (this.loadingRow) {
-        this.loadingRow.remove();
-        this.loadingRow = null;
-      }
-    }
+    this.renderBody();
   }
 
   public setError(message: string): void {
-    if (!this.dt) return;
-    this.dt.clear().draw(false);
-    const tbody = this.tableEl.querySelector('tbody');
-    if (tbody) {
-      const colCount = this.opts.columns.filter(c => !this.hiddenColumnIds.has(c.id)).length;
-      const tr = document.createElement('tr');
-      const td = document.createElement('td');
-      td.colSpan = colCount;
-      td.style.textAlign = 'center';
-      td.style.padding = '2.5rem 1rem';
-      td.innerHTML = `<div style="color:var(--danger);">
-        <div style="font-weight:700;margin-bottom:0.25rem;"><i class="fa-solid fa-triangle-exclamation"></i> Error Loading Records</div>
-        <div style="font-size:0.85rem;">${escapeHtml(message)}</div>
-      </div>`;
-      tr.appendChild(td);
-      tbody.appendChild(tr);
-    }
+    this.tbodyEl.innerHTML = `
+      <tr>
+        <td colspan="${this.getVisibleColumns().length}" style="text-align: center; padding: 2.5rem; color: var(--danger);">
+          <div style="font-weight: 700; margin-bottom: 0.25rem;"><i class="fa-solid fa-triangle-exclamation"></i> Error Loading Records</div>
+          <div style="font-size: 0.85rem;">${escapeHtml(message)}</div>
+        </td>
+      </tr>
+    `;
   }
 
   public setCustomFilterSlot(el: HTMLElement): void {
@@ -551,11 +631,16 @@ export class DataTableComponent<T extends object> {
   }
 
   public getSearchValue(): string {
-    return this.dt ? (this.dt.search() as string) : '';
+    return this.searchInput?.value.trim() || '';
   }
 
   public setSearchValue(val: string): void {
-    if (this.dt) this.dt.search(val).draw();
+    if (this.searchInput) {
+      this.searchInput.value = val;
+      if (this.searchClearBtn) {
+        this.searchClearBtn.style.display = val ? 'block' : 'none';
+      }
+    }
   }
 
   public getData(): T[] {
@@ -571,27 +656,24 @@ export class DataTableComponent<T extends object> {
   }
 
   public getElement(): HTMLElement {
-    return this.wrapper;
+    return this.container;
   }
 
   public destroy(): void {
-    if (this.dt) {
-      this.dt.destroy(true); // true = remove table from DOM as well
-      this.dt = null;
+    if (this.documentClickHandler) {
+      document.removeEventListener('click', this.documentClickHandler);
+      this.documentClickHandler = null;
+    }
+    if (this.searchDebounceTimer) {
+      clearTimeout(this.searchDebounceTimer);
+      this.searchDebounceTimer = null;
     }
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Legacy type aliases so old "DataTable / DataTableColumn" imports still work
-// (views that haven't been updated yet)
-// ─────────────────────────────────────────────────────────────────────────────
-export { DataTableComponent as DataTable };
-export type { DataTableColumnDef as DataTableColumn };
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────────────────
+// Aliases for compatibility
+export { DataTable as DataTableComponent };
+export type { DataTableColumn as DataTableColumnDef };
 
 function escapeHtml(str: string): string {
   return str
@@ -601,4 +683,3 @@ function escapeHtml(str: string): string {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
 }
-
