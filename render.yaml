@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: digibanking-portal
+    env: static
+    buildCommand: npm run build
+    staticPublishPath: ./dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_BASE_URL
+        value: https://digibank.fhcl.co.ke/api/v1

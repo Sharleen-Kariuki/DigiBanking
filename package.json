@@ -11,11 +11,13 @@
     "generate-demo": "node scripts/generate-demo-data.js"
   },
   "dependencies": {
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7",
     "xlsx": "^0.18.5"
   },
-  "devDependencies": {
-    "typescript": "^5.7.2",
-    "vite": "^6.0.7"
+  "devDependencies": {},
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
 
