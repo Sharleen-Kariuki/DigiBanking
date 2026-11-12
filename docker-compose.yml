@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  # Onboarding API Service (Linux ELF Binary + SQLite)
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: digibanking-api
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - DB_PATH=/app/data/onboarding.sqlite
+      - CONFIG_PATH=/app/config.xml
+    volumes:
+      - ./data:/app/data
+
+  # Frontend Portal Service (Vite Development / Preview)
+  portal:
+    image: node:20-alpine
+    container_name: digibanking-portal
+    working_dir: /app
+    volumes:
+      - .:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_BASE_URL=http://localhost:3000/api/v1
+    command: sh -c "npm install && npm run dev -- --host"
+    depends_on:
+      - api

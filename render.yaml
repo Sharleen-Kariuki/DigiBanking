@@ -1,14 +1,25 @@
 services:
+  # 1. Linux API Backend Web Service (Docker container)
+  - type: web
+    name: digibanking-api
+    env: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /health
+    autoDeploy: true
+
+  # 2. Frontend Static Site
   - type: web
     name: digibanking-portal
     env: static
+    plan: free
     buildCommand: npm run build
     staticPublishPath: ./dist
+    autoDeploy: true
     routes:
       - type: rewrite
         source: /*
         destination: /index.html
     envVars:
       - key: VITE_API_BASE_URL
-        value: https://digibank.fhcl.co.ke/api/v1
-
+        value: https://digibanking-api.onrender.com/api/v1
