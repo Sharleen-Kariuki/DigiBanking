@@ -29,3 +29,4 @@ HEALTHCHECK --interval=15s --timeout=5s --start-period=5s --retries=3 \
   CMD [ "sh", "-c", "exec 3<>/dev/tcp/127.0.0.1/${PORT:-3000} && echo -e 'GET /health HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && head -n 1 <&3 | grep -q '200 OK'" ] || exit 1
 
 ENTRYPOINT ["/app/api/run.sh"]
+
