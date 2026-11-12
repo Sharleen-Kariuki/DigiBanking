@@ -1,7 +1,7 @@
 import { ApiClient } from '../services/api-client';
 import { UploadSession, PaginatedResponse } from '../types';
 import { NewBatchModal } from './new-batch-modal';
-import { DataTable, DataTableColumn } from '../components/data-table';
+import { DataTable, DataTableColumn } from '../services/datatable';
 
 export class BatchesView {
   private container: HTMLElement;

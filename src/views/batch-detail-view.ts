@@ -4,7 +4,7 @@ import { ChunkedUploader } from '../services/chunked-uploader';
 import { UploadSession, UploadRecord, PaginatedResponse } from '../types';
 import { ToastManager } from '../components/toast';
 import { Modal } from '../components/modal';
-import { DataTable, DataTableColumn } from '../components/data-table';
+import { DataTable, DataTableColumn } from '../services/datatable';
 
 export class BatchDetailView {
   private uploadId: string;

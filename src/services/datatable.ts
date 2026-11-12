@@ -539,6 +539,18 @@ export class DataTableComponent<T extends object> {
     if (this.dt) this.dt.search(val).draw();
   }
 
+  public getData(): T[] {
+    return this.data;
+  }
+
+  public getTotalRows(): number {
+    return this.totalRows;
+  }
+
+  public getIsLoading(): boolean {
+    return this.isLoading;
+  }
+
   public getElement(): HTMLElement {
     return this.wrapper;
   }
