@@ -80,6 +80,8 @@ export class DataTableComponent<T extends object> {
   private loadingRow: HTMLElement | null = null;
   private searchDebounce: ReturnType<typeof setTimeout> | null = null;
   private hiddenColumnIds: Set<string> = new Set();
+  /** True while DataTables is initialising — suppresses spurious event callbacks */
+  private initialising = false;
 
   constructor(options: DataTableComponentOptions<T>) {
     this.opts = {
@@ -199,22 +201,23 @@ export class DataTableComponent<T extends object> {
         clearBtn.style.display = val ? 'block' : 'none';
         if (this.searchDebounce) clearTimeout(this.searchDebounce);
         this.searchDebounce = setTimeout(() => {
-          // If DataTables is initialised pass search through it; otherwise callback directly
-          if (this.dt) {
-            this.dt.search(val).draw();
-          } else if (this.opts.onSearch) {
+          // Always use the server-side onSearch callback when provided
+          // (never delegate to dt.search() to avoid double-firing with the search.dt event)
+          if (this.opts.onSearch) {
             this.opts.onSearch(val);
+          } else if (this.dt) {
+            this.dt.search(val).draw();
           }
-        }, 280);
+        }, 300);
       });
 
       clearBtn.addEventListener('click', () => {
         input.value = '';
         clearBtn.style.display = 'none';
-        if (this.dt) {
-          this.dt.search('').draw();
-        } else if (this.opts.onSearch) {
+        if (this.opts.onSearch) {
           this.opts.onSearch('');
+        } else if (this.dt) {
+          this.dt.search('').draw();
         }
         input.focus();
       });
@@ -409,41 +412,46 @@ export class DataTableComponent<T extends object> {
       }
     }
 
-    this.dt = new DataTable(this.tableEl, dtOptions);
+    // Defer init to next animation frame so the wrapper is in the DOM first.
+    // This prevents DataTables from throwing because the table has no layout.
+    requestAnimationFrame(() => {
+      this.initialising = true;
+      this.dt = new DataTable(this.tableEl, dtOptions);
+      this.initialising = false;
 
-    // Server-side callbacks wired through DataTables events
-    if (this.opts.onSort) {
-      this.dt.on('order.dt', () => {
-        const order = this.dt.order();
-        if (order && order.length > 0) {
-          const [colIdx, dir] = order[0] as [number, string];
-          const col = this.opts.columns[colIdx];
-          if (col && this.opts.onSort) {
-            this.opts.onSort(col.id, dir as 'asc' | 'desc', col.sortKey || col.id);
+      // Server-side sort: suppress the spurious fire that happens on init
+      if (this.opts.onSort) {
+        this.dt.on('order.dt', () => {
+          if (this.initialising) return;
+          const order = this.dt.order();
+          if (order && order.length > 0) {
+            const [colIdx, dir] = order[0] as [number, string];
+            const col = this.opts.columns[colIdx];
+            if (col && this.opts.onSort) {
+              this.opts.onSort(col.id, dir as 'asc' | 'desc', col.sortKey || col.id);
+            }
           }
-        }
-      });
-    }
+        });
+      }
 
-    if (this.opts.onPageChange) {
-      this.dt.on('page.dt', () => {
-        const info = this.dt.page.info();
-        if (this.opts.onPageChange) this.opts.onPageChange(info.page + 1);
-      });
-    }
+      if (this.opts.onPageChange) {
+        this.dt.on('page.dt', () => {
+          if (this.initialising) return;
+          const info = this.dt.page.info();
+          if (this.opts.onPageChange) this.opts.onPageChange(info.page + 1);
+        });
+      }
 
-    if (this.opts.onPageSizeChange) {
-      this.dt.on('length.dt', (_e: Event, _settings: any, len: number) => {
-        if (this.opts.onPageSizeChange) this.opts.onPageSizeChange(len);
-      });
-    }
+      if (this.opts.onPageSizeChange) {
+        this.dt.on('length.dt', (_e: Event, _settings: any, len: number) => {
+          if (this.initialising) return;
+          if (this.opts.onPageSizeChange) this.opts.onPageSizeChange(len);
+        });
+      }
 
-    if (this.opts.onSearch) {
-      this.dt.on('search.dt', () => {
-        const val = this.dt.search();
-        if (this.opts.onSearch) this.opts.onSearch(val);
-      });
-    }
+      // NOTE: search.dt is NOT wired here — the toolbar input handler calls
+      // onSearch directly (server-side). Wiring both would double-fire every search.
+    });
   }
 
   private buildEmptyHtml(): string {
@@ -469,11 +477,22 @@ export class DataTableComponent<T extends object> {
       this.dt.clear();
       this.dt.rows.add(data);
       this.dt.draw(false);
+    } else {
+      // DataTables init is deferred — retry after it finishes
+      requestAnimationFrame(() => {
+        if (this.dt) {
+          this.dt.clear();
+          this.dt.rows.add(this.data);
+          this.dt.draw(false);
+        }
+      });
     }
   }
 
   public setLoading(loading: boolean): void {
     this.isLoading = loading;
+    // If DataTables isn't ready yet the loading state is stored in this.isLoading
+    // and the spinner row is injected once dt fires its first draw.
     if (!this.dt) return;
 
     if (loading) {
