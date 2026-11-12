@@ -8,7 +8,7 @@ export interface HealthStatus {
 }
 
 const STORAGE_KEY = 'digibanking_api_base_url';
-const DEFAULT_URL = 'http://localhost:3000/api/v1';
+const DEFAULT_URL = ' http://localhost:3000/api/v1';
 
 class ApiConfigManager {
   private currentBaseUrl: string;
