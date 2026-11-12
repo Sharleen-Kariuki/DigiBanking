@@ -155,7 +155,7 @@ export class SettingsDrawer {
               class="form-control"
               style="font-size: 0.85rem;"
               value="${currentApiUrl}"
-              placeholder="http://localhost:3000/api/v1"
+              placeholder="${apiConfig.getDefaultUrl()}"
             />
           </div>
 
@@ -245,7 +245,7 @@ export class SettingsDrawer {
       apiInput.value = 'http://localhost:3100/api/v1';
     });
     this.drawerEl.querySelector('#drawer-btn-reset-api')?.addEventListener('click', () => {
-      apiInput.value = 'http://localhost:3000/api/v1';
+      apiInput.value = apiConfig.getDefaultUrl();
     });
 
     // Ping health test

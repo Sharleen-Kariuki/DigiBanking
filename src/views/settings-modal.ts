@@ -7,21 +7,22 @@ export class SettingsModal {
     const container = document.createElement('div');
 
     const currentUrl = apiConfig.getBaseUrl();
+    const defaultUrl = apiConfig.getDefaultUrl();
 
     container.innerHTML = `
       <p style="font-size: 0.9rem; color: var(--neutral-600); margin-bottom: 1.25rem;">
-        Configure the digital banking onboarding API endpoint. The port can be adjusted to match your local service or <code>config.xml</code>.
+        Configure the digital banking onboarding API endpoint.
       </p>
 
       <div class="form-group">
         <label class="form-label" for="api-base-url">API Base Address</label>
-        <input type="url" id="api-base-url" class="form-control" value="${currentUrl}" placeholder="http://localhost:3000/api/v1" />
-        <div class="form-hint">Default setting from kit: <code>http://localhost:3000/api/v1</code></div>
+        <input type="url" id="api-base-url" class="form-control" value="${currentUrl}" placeholder="${defaultUrl}" />
+        <div class="form-hint">Default setting: <code>${defaultUrl}</code></div>
       </div>
 
       <div style="display: flex; gap: 0.5rem; margin-bottom: 1.5rem; flex-wrap: wrap;">
+        <button type="button" class="btn btn-sm btn-outline-primary" id="preset-prod">Production (fhcl.co.ke)</button>
         <button type="button" class="btn btn-sm btn-secondary" id="preset-3000">Port 3000</button>
-        <button type="button" class="btn btn-sm btn-secondary" id="preset-3100">Port 3100</button>
         <button type="button" class="btn btn-sm btn-secondary" id="btn-reset">Reset to Default</button>
       </div>
 
@@ -40,16 +41,16 @@ export class SettingsModal {
     const pingOutput = container.querySelector<HTMLElement>('#ping-output')!;
     const pingBtn = container.querySelector<HTMLButtonElement>('#btn-ping')!;
 
+    container.querySelector('#preset-prod')?.addEventListener('click', () => {
+      urlInput.value = 'https://digibank.fhcl.co.ke/api/v1';
+    });
+
     container.querySelector('#preset-3000')?.addEventListener('click', () => {
       urlInput.value = 'http://localhost:3000/api/v1';
     });
 
-    container.querySelector('#preset-3100')?.addEventListener('click', () => {
-      urlInput.value = 'http://localhost:3100/api/v1';
-    });
-
     container.querySelector('#btn-reset')?.addEventListener('click', () => {
-      urlInput.value = 'http://localhost:3000/api/v1';
+      urlInput.value = defaultUrl;
     });
 
     pingBtn.addEventListener('click', async () => {

@@ -8,7 +8,12 @@ export interface HealthStatus {
 }
 
 const STORAGE_KEY = 'digibanking_api_base_url';
-const DEFAULT_URL = 'https://digibank.fhcl.co.ke/api/v1';
+
+const envUrl =
+  (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() ||
+  (import.meta.env.VITE_DEFAULT_URL as string | undefined)?.trim();
+
+const DEFAULT_URL = envUrl || 'https://digibank.fhcl.co.ke/api/v1';
 
 class ApiConfigManager {
   private currentBaseUrl: string;
@@ -16,7 +21,21 @@ class ApiConfigManager {
 
   constructor() {
     const saved = localStorage.getItem(STORAGE_KEY);
-    this.currentBaseUrl = saved && saved.trim() ? saved.trim() : DEFAULT_URL;
+    // If localStorage has an old localhost URL but DEFAULT_URL is configured to a remote server, upgrade to DEFAULT_URL
+    if (saved && saved.trim()) {
+      if (saved.includes('localhost') && DEFAULT_URL.startsWith('https://')) {
+        this.currentBaseUrl = DEFAULT_URL;
+        localStorage.setItem(STORAGE_KEY, DEFAULT_URL);
+      } else {
+        this.currentBaseUrl = saved.trim();
+      }
+    } else {
+      this.currentBaseUrl = DEFAULT_URL;
+    }
+  }
+
+  public getDefaultUrl(): string {
+    return DEFAULT_URL;
   }
 
   public getBaseUrl(): string {

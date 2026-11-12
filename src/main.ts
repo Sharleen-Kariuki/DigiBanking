@@ -9,28 +9,25 @@ async function bootstrap() {
   const root = document.getElementById('app');
   if (!root) throw new Error('#app root container missing');
 
-  // Attempt to read port from config.xml if no custom URL saved
+  // Attempt to read custom configuration from config.xml if no custom URL saved
   if (!localStorage.getItem('digibanking_api_base_url')) {
     try {
-      // Before an XML document can be accessed, 
-      // it must be loaded into an XML DOM object.
-
-      // All modern browsers have a built-in XML parser, 
-      // that can convert text into an XML DOM object. 
-
       const res = await fetch('/config.xml');
       
       if (res.ok) {
         const text = await res.text();
         const doc = new DOMParser().parseFromString(text, 'application/xml');
+        const configuredUrl = doc.querySelector('configuration > api > url')?.textContent?.trim();
         const port = doc.querySelector('configuration > api > port')?.textContent?.trim();
-        if (port) {
+
+        if (configuredUrl) {
+          apiConfig.setBaseUrl(configuredUrl);
+        } else if (port && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
           apiConfig.setBaseUrl(`http://localhost:${port}/api/v1`);
         }
       }
     } catch (error) {
-      console.warn('Failed to load /config.xml' , error)
-
+      console.warn('Failed to load /config.xml', error);
     }
   }
 
