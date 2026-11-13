@@ -11,3 +11,5 @@ data/*.sqlite-wal
 
 # Windows executable
 windows-x64/
+
+.env
