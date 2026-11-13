@@ -126,7 +126,7 @@ export class BatchDetailView {
             <i class="fa-solid fa-spinner fa-spin" style="font-size: 1.5rem; margin-bottom: 0.5rem; display: block;"></i>
             <span>Loading records...</span>
           </div>
-          <table id="records-table" class="display nowrap dataTable" style="width: 100%; display: none;"></table>
+          <table id="records-table" class="display dataTable" style="width: 100%; display: none;"></table>
         </div>
       </div>
 
@@ -533,20 +533,26 @@ export class BatchDetailView {
           render: (_data: unknown, _type: string, row: UploadRecord) => escapeHtml(`${row.first_name || ''} ${row.last_name || ''}`.trim() || '—')
         },
         {
-          title: 'Phone / ID',
-          data: null,
+          title: 'Phone Number',
+          data: 'phone_number',
           className: 'cell-mono',
-          render: (_data: unknown, _type: string, row: UploadRecord) => {
-            const id = row.id_number ? `ID: ${row.id_number}` : '';
-            const tel = row.phone_number ? `Tel: ${row.phone_number}` : '';
-            if (id && tel) return `<div>${escapeHtml(id)}</div><div style="color: var(--neutral-500); font-size: 0.75rem;">${escapeHtml(tel)}</div>`;
-            return escapeHtml(id || tel || '—');
-          }
+          render: (val: string) => escapeHtml(val || '—')
         },
         {
-          title: 'Branch & Account',
-          data: null,
-          render: (_data: unknown, _type: string, row: UploadRecord) => escapeHtml(`${row.branch || '—'} (${row.account_type || '—'})`)
+          title: 'National ID',
+          data: 'id_number',
+          className: 'cell-mono',
+          render: (val: string) => escapeHtml(val || '—')
+        },
+        {
+          title: 'Branch',
+          data: 'branch',
+          render: (val: string) => escapeHtml(val || '—')
+        },
+        {
+          title: 'Account Type',
+          data: 'account_type',
+          render: (val: string) => `<span style="text-transform: capitalize;">${escapeHtml(val || '—')}</span>`
         },
         {
           title: 'Reason / Findings',

@@ -99,7 +99,7 @@ export class MembersView {
       data,
       pageLength: 20,
       lengthMenu: [10, 20, 50, 100],
-      order: [[5, 'desc']],
+      order: [[7, 'desc']],
       responsive: true,
       columns: [
         {
@@ -116,30 +116,31 @@ export class MembersView {
           render: (_data: unknown, _type: string, row: Member) => escapeHtml(`${row.first_name} ${row.last_name}`)
         },
         {
-          title: 'Identifiers (ID & Phone)',
-          data: null,
+          title: 'National ID',
+          data: 'id_number',
           className: 'cell-mono',
-          render: (_data: unknown, _type: string, row: Member) => `
-            <div style="font-size: 0.8rem; line-height: 1.35;">
-              <div>ID: ${escapeHtml(row.id_number || '—')}</div>
-              <div style="color: var(--neutral-500);">Tel: ${escapeHtml(row.phone_number || '—')}</div>
-            </div>
-          `
+          render: (val: string) => escapeHtml(val || '—')
+        },
+        {
+          title: 'Phone Number',
+          data: 'phone_number',
+          className: 'cell-mono',
+          render: (val: string) => escapeHtml(val || '—')
         },
         {
           title: 'Branch',
           data: 'branch'
         },
         {
-          title: 'Account Type & No.',
-          data: null,
+          title: 'Account Type',
+          data: 'account_type',
+          render: (val: string) => `<span style="text-transform: capitalize;">${escapeHtml(val || '—')}</span>`
+        },
+        {
+          title: 'Account Number',
+          data: 'account_number',
           className: 'cell-mono',
-          render: (_data: unknown, _type: string, row: Member) => `
-            <div style="font-size: 0.825rem;">
-              <span style="font-weight: 600; text-transform: capitalize;">${escapeHtml(row.account_type)}</span>
-              <div style="color: var(--neutral-500); font-size: 0.775rem;">${escapeHtml(row.account_number || '—')}</div>
-            </div>
-          `
+          render: (val: string) => escapeHtml(val || '—')
         },
         {
           title: 'Onboarded At',
