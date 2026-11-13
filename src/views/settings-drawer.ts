@@ -32,7 +32,7 @@ export class SettingsDrawer {
   private render(): void {
     const currentTheme = themeManager.getTheme();
     const currentFontSize = themeManager.getFontSize();
-    const currentApiUrl = apiConfig.getBaseUrl();
+    // const currentApiUrl = apiConfig.getBaseUrl();
 
     this.drawerEl.innerHTML = `
       <div class="drawer-header">
