@@ -13,3 +13,8 @@ data/*.sqlite-wal
 windows-x64/
 
 .env
+
+# Personal / scratch files
+Naivasha*
+*.xlsx
+!public/riverside-branch-october-enrolment.xlsx

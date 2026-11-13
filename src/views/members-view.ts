@@ -2,127 +2,14 @@ import { ApiClient } from '../services/api-client';
 import { Member, PaginatedResponse } from '../types';
 import { ToastManager } from '../components/toast';
 import { Modal } from '../components/modal';
-import { DataTable, DataTableColumn } from '../services/datatable';
 
 export class MembersView {
   private container: HTMLElement;
-  private dataTable: DataTable<Member>;
-  private currentPage = 1;
-  private pageSize = 20;
-  private searchQuery = '';
-  private orderBy = 'created_at desc';
+  private dt: any = null;
 
   constructor() {
     this.container = document.createElement('div');
     this.container.className = 'members-view';
-
-    const columns: DataTableColumn<Member>[] = [
-      {
-        id: 'member_number',
-        header: 'Member #',
-        sortable: true,
-        sortKey: 'member_number',
-        width: '140px',
-        className: 'cell-mono cell-bold',
-        render: row => `<span style="color: var(--primary);">${escapeHtml(row.member_number)}</span>`
-      },
-      {
-        id: 'full_name',
-        header: 'Full Name',
-        sortable: true,
-        sortKey: 'last_name',
-        className: 'cell-bold',
-        render: row => escapeHtml(`${row.first_name} ${row.last_name}`)
-      },
-      {
-        id: 'identifiers',
-        header: 'Identifiers (ID & Phone)',
-        className: 'cell-mono',
-        render: row => `
-          <div style="font-size: 0.8rem; line-height: 1.35;">
-            <div>ID: ${escapeHtml(row.id_number || '—')}</div>
-            <div style="color: var(--neutral-500);">Tel: ${escapeHtml(row.phone_number || '—')}</div>
-          </div>
-        `
-      },
-      {
-        id: 'branch',
-        header: 'Branch',
-        sortable: true,
-        sortKey: 'branch',
-        accessor: 'branch'
-      },
-      {
-        id: 'account',
-        header: 'Account Type & No.',
-        className: 'cell-mono',
-        render: row => `
-          <div style="font-size: 0.825rem;">
-            <span style="font-weight: 600; text-transform: capitalize;">${escapeHtml(row.account_type)}</span>
-            <div style="color: var(--neutral-500); font-size: 0.775rem;">${escapeHtml(row.account_number || '—')}</div>
-          </div>
-        `
-      },
-      {
-        id: 'created_at',
-        header: 'Onboarded At',
-        sortable: true,
-        sortKey: 'created_at',
-        width: '150px',
-        className: 'cell-mono',
-        render: row => `<span style="font-size: 0.8rem; color: var(--neutral-600);">${formatDate(row.created_at)}</span>`
-      },
-      {
-        id: 'actions',
-        header: 'Action',
-        hideable: false,
-        width: '90px',
-        align: 'right',
-        render: row => {
-          const btn = document.createElement('button');
-          btn.type = 'button';
-          btn.className = 'btn btn-secondary btn-sm';
-          btn.textContent = 'View';
-          btn.addEventListener('click', e => {
-            e.stopPropagation();
-            this.openMemberDetail(row);
-          });
-          return btn;
-        }
-      }
-    ];
-
-    this.dataTable = new DataTable<Member>({
-      tableId: 'members_table',
-      columns,
-      pageSize: this.pageSize,
-      searchPlaceholder: 'Search by member #, name, phone, or national ID...',
-      initialSort: { columnId: 'created_at', direction: 'desc' },
-      emptyTitle: 'No onboarded members found',
-      emptyMessage: 'No members matched your search criteria.',
-      onSearch: query => {
-        this.searchQuery = query;
-        this.currentPage = 1;
-        this.loadMembers();
-      },
-      onSort: (_colId, dir, sortKey) => {
-        this.orderBy = `${sortKey} ${dir}`;
-        this.currentPage = 1;
-        this.loadMembers();
-      },
-      onPageChange: page => {
-        this.currentPage = page;
-        this.loadMembers();
-      },
-      onPageSizeChange: size => {
-        this.pageSize = size;
-        this.currentPage = 1;
-        this.loadMembers();
-      },
-      onRowClick: row => {
-        this.openMemberDetail(row);
-      }
-    });
   }
 
   public async render(): Promise<HTMLElement> {
@@ -144,17 +31,19 @@ export class MembersView {
         <div class="card-header">
           <div>
             <h3 class="card-title">Active Digital Banking Members</h3>
-            <p class="card-subtitle">Filter columns, search in real-time, and inspect member accounts</p>
+            <p class="card-subtitle">Search by name, ID, phone, or member number; sort and inspect accounts</p>
           </div>
         </div>
 
         <div class="card-body" id="table-slot" style="padding-top: 1rem;">
-          <!-- DataTable is injected here -->
+          <div id="members-table-loading" style="text-align: center; padding: 3rem 1rem; color: var(--neutral-500);">
+            <i class="fa-solid fa-spinner fa-spin" style="font-size: 1.5rem; margin-bottom: 0.5rem; display: block;"></i>
+            <span>Loading members...</span>
+          </div>
+          <table id="members-table" class="display nowrap dataTable" style="width: 100%; display: none;"></table>
         </div>
       </div>
     `;
-
-    this.container.querySelector('#table-slot')?.appendChild(this.dataTable.getElement());
 
     this.container.querySelector('#btn-refresh-members')?.addEventListener('click', () => {
       this.loadMembers();
@@ -166,24 +55,135 @@ export class MembersView {
   }
 
   public async loadMembers(): Promise<void> {
-    this.dataTable.setLoading(true);
+    const loadingEl = this.container.querySelector<HTMLElement>('#members-table-loading');
+    const tableEl = this.container.querySelector<HTMLTableElement>('#members-table');
+    if (!this.dt && loadingEl) loadingEl.style.display = 'block';
 
     try {
       const response: PaginatedResponse<Member> = await ApiClient.listMembers({
-        page: this.currentPage,
-        limit: this.pageSize,
-        search: this.searchQuery || undefined,
-        $orderby: this.orderBy,
+        limit: 100,
+        $orderby: 'created_at desc',
         $count: true
       });
 
-      this.dataTable.setData(response.data, response.pagination.total, response.pagination.page);
+      if (loadingEl) loadingEl.style.display = 'none';
+      if (tableEl) tableEl.style.display = 'table';
+
+      if (this.dt) {
+        this.dt.clear();
+        this.dt.rows.add(response.data);
+        this.dt.draw();
+      } else if (tableEl) {
+        this.initDataTable(tableEl, response.data);
+      }
     } catch (err) {
-      this.dataTable.setError(err instanceof Error ? err.message : String(err));
+      if (loadingEl) {
+        loadingEl.style.display = 'block';
+        loadingEl.innerHTML = `
+          <div style="color: var(--danger);">
+            <div style="font-weight: 700; margin-bottom: 0.25rem;"><i class="fa-solid fa-triangle-exclamation"></i> Error Loading Members</div>
+            <div style="font-size: 0.85rem;">${escapeHtml(err instanceof Error ? err.message : String(err))}</div>
+          </div>
+        `;
+      }
     }
   }
 
-  public destroy(): void {}
+  private initDataTable(tableEl: HTMLTableElement, data: Member[]): void {
+    if (typeof DataTable === 'undefined') {
+      setTimeout(() => this.initDataTable(tableEl, data), 100);
+      return;
+    }
+
+    this.dt = new DataTable(tableEl, {
+      data,
+      pageLength: 20,
+      lengthMenu: [10, 20, 50, 100],
+      order: [[5, 'desc']],
+      responsive: true,
+      columns: [
+        {
+          title: 'Member #',
+          data: 'member_number',
+          width: '140px',
+          className: 'cell-mono cell-bold',
+          render: (val: string) => `<span style="color: var(--primary);">${escapeHtml(val)}</span>`
+        },
+        {
+          title: 'Full Name',
+          data: null,
+          className: 'cell-bold',
+          render: (_data: unknown, _type: string, row: Member) => escapeHtml(`${row.first_name} ${row.last_name}`)
+        },
+        {
+          title: 'Identifiers (ID & Phone)',
+          data: null,
+          className: 'cell-mono',
+          render: (_data: unknown, _type: string, row: Member) => `
+            <div style="font-size: 0.8rem; line-height: 1.35;">
+              <div>ID: ${escapeHtml(row.id_number || '—')}</div>
+              <div style="color: var(--neutral-500);">Tel: ${escapeHtml(row.phone_number || '—')}</div>
+            </div>
+          `
+        },
+        {
+          title: 'Branch',
+          data: 'branch'
+        },
+        {
+          title: 'Account Type & No.',
+          data: null,
+          className: 'cell-mono',
+          render: (_data: unknown, _type: string, row: Member) => `
+            <div style="font-size: 0.825rem;">
+              <span style="font-weight: 600; text-transform: capitalize;">${escapeHtml(row.account_type)}</span>
+              <div style="color: var(--neutral-500); font-size: 0.775rem;">${escapeHtml(row.account_number || '—')}</div>
+            </div>
+          `
+        },
+        {
+          title: 'Onboarded At',
+          data: 'created_at',
+          width: '150px',
+          className: 'cell-mono',
+          render: (val: string) => `<span style="font-size: 0.8rem; color: var(--neutral-600);">${formatDate(val)}</span>`
+        },
+        {
+          title: 'Action',
+          data: null,
+          orderable: false,
+          searchable: false,
+          width: '90px',
+          className: 'text-right',
+          render: () => `<button type="button" class="btn btn-secondary btn-sm btn-view-member">View</button>`
+        }
+      ],
+      language: {
+        search: '_INPUT_',
+        searchPlaceholder: 'Search by member #, name, phone, or ID...',
+        emptyTable: 'No onboarded members found',
+        zeroRecords: 'No members matched your search criteria.'
+      }
+    });
+
+    tableEl.addEventListener('click', (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      const tr = target.closest('tr');
+      if (tr && this.dt) {
+        const rowData = this.dt.row(tr).data() as Member;
+        if (rowData) {
+          this.openMemberDetail(rowData);
+        }
+      }
+    });
+  }
+
+  public destroy(): void {
+    if (this.dt) {
+      this.dt.destroy();
+      this.dt = null;
+    }
+  }
 
   private async openMemberDetail(member: Member): Promise<void> {
     try {
@@ -249,8 +249,9 @@ export class MembersView {
       `;
 
       const modal = new Modal({
-        title: `Member Profile: ${fullMember.member_number}`,
+        title: `Member: ${fullMember.first_name} ${fullMember.last_name}`,
         content,
+        maxWidth: '560px',
         footerButtons: [
           {
             label: 'Close',
@@ -284,7 +285,6 @@ function formatDate(iso: string): string {
   try {
     const d = new Date(iso);
     return d.toLocaleDateString(undefined, {
-      year: 'numeric',
       month: 'short',
       day: 'numeric',
       hour: '2-digit',

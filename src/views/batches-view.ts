@@ -1,183 +1,15 @@
 import { ApiClient } from '../services/api-client';
 import { UploadSession, PaginatedResponse } from '../types';
 import { NewBatchModal } from './new-batch-modal';
-import { DataTable, DataTableColumn } from '../services/datatable';
 
 export class BatchesView {
   private container: HTMLElement;
-  private dataTable: DataTable<UploadSession>;
-  private currentPage = 1;
-  private pageSize = 15;
+  private dt: any = null;
   private activeStatus = '';
-  private searchQuery = '';
-  private orderBy = 'created_at desc';
 
   constructor() {
     this.container = document.createElement('div');
     this.container.className = 'batches-view';
-
-    const columns: DataTableColumn<UploadSession>[] = [
-      {
-        id: 'batch_name',
-        header: 'Batch Name & File',
-        sortable: true,
-        sortKey: 'batch_name',
-        render: row => `
-          <div>
-            <div class="cell-bold">${escapeHtml(row.batch_name)}</div>
-            <div style="font-size: 0.75rem; color: var(--neutral-500); margin-top: 0.15rem;">
-              <i class="fa-regular fa-file-excel" aria-hidden="true"></i> ${escapeHtml(row.file_name)} (${(row.file_size / 1024).toFixed(1)} KB)
-            </div>
-          </div>
-        `
-      },
-      {
-        id: 'status',
-        header: 'Status',
-        sortable: true,
-        sortKey: 'status',
-        width: '150px',
-        render: row => `
-          <span class="badge badge-${row.status}">
-            ${formatStatusLabel(row.status)}
-          </span>
-        `
-      },
-      {
-        id: 'progress',
-        header: 'Progress',
-        width: '180px',
-        render: row => {
-          const isComplete = row.status === 'committed' || row.status === 'committed_with_errors';
-          const isValidating = row.status === 'validating';
-          const isUploading = row.status === 'uploading';
-
-          if (isUploading) {
-            return `
-              <div style="font-size: 0.75rem; color: var(--neutral-600); margin-bottom: 0.2rem;">
-                Uploading: ${row.upload_progress}% (${row.uploaded_chunks.length}/${row.chunk_count} chunks)
-              </div>
-              <div class="progress-container"><div class="progress-bar-fill animated" style="width: ${row.upload_progress}%;"></div></div>
-            `;
-          } else if (isValidating) {
-            return `
-              <div style="font-size: 0.75rem; color: var(--neutral-600); margin-bottom: 0.2rem;">
-                Validating: ${row.process_progress}% (${row.processed_rows}/${row.total_rows} rows)
-              </div>
-              <div class="progress-container"><div class="progress-bar-fill animated" style="width: ${row.process_progress}%;"></div></div>
-            `;
-          } else if (isComplete) {
-            return `
-              <div style="font-size: 0.75rem; color: var(--success-text); font-weight: 600;">
-                100% Processed (${row.onboarded_rows} onboarded)
-              </div>
-              <div class="progress-container"><div class="progress-bar-fill success" style="width: 100%;"></div></div>
-            `;
-          } else {
-            return `
-              <div style="font-size: 0.75rem; color: var(--neutral-500);">
-                ${row.total_rows} total rows
-              </div>
-              <div class="progress-container"><div class="progress-bar-fill" style="width: 100%;"></div></div>
-            `;
-          }
-        }
-      },
-      {
-        id: 'row_breakdown',
-        header: 'Row Breakdown',
-        render: row => `
-          <div style="font-size: 0.8rem; line-height: 1.4;">
-            <span style="color: var(--success); font-weight: 600;">${row.valid_rows} Valid</span> |
-            <span style="color: var(--danger); font-weight: 600;">${row.invalid_rows} Invalid</span> |
-            <span style="color: var(--secondary); font-weight: 600;">${row.onboarded_rows} Onboarded</span>
-          </div>
-        `
-      },
-      {
-        id: 'created_at',
-        header: 'Uploaded At',
-        sortable: true,
-        sortKey: 'created_at',
-        width: '140px',
-        className: 'cell-mono',
-        render: row => `<span style="font-size: 0.8rem; color: var(--neutral-600);">${formatDate(row.created_at)}</span>`
-      },
-      {
-        id: 'actions',
-        header: 'Action',
-        hideable: false,
-        width: '110px',
-        align: 'right',
-        render: row => {
-          const isUploading = row.status === 'uploading';
-          const a = document.createElement('a');
-          a.href = `#/batch/${row.id}`;
-          a.className = `btn ${isUploading ? 'btn-primary' : 'btn-secondary'} btn-sm`;
-          a.textContent = isUploading ? 'Resume →' : 'Open →';
-          return a;
-        }
-      }
-    ];
-
-    this.dataTable = new DataTable<UploadSession>({
-      tableId: 'batches_table',
-      columns,
-      pageSize: this.pageSize,
-      searchPlaceholder: 'Search batches by name or file...',
-      initialSort: { columnId: 'created_at', direction: 'desc' },
-      emptyTitle: 'No upload batches found',
-      emptyMessage: 'No batches matched your filter criteria.',
-      onSearch: query => {
-        this.searchQuery = query;
-        this.currentPage = 1;
-        this.loadBatches();
-      },
-      onSort: (_colId, dir, sortKey) => {
-        this.orderBy = `${sortKey} ${dir}`;
-        this.currentPage = 1;
-        this.loadBatches();
-      },
-      onPageChange: page => {
-        this.currentPage = page;
-        this.loadBatches();
-      },
-      onPageSizeChange: size => {
-        this.pageSize = size;
-        this.currentPage = 1;
-        this.loadBatches();
-      },
-      onRowClick: row => {
-        window.location.hash = `#/batch/${row.id}`;
-      }
-    });
-
-    this.setupCustomFilters();
-  }
-
-  private setupCustomFilters(): void {
-    const statusSelect = document.createElement('select');
-    statusSelect.className = 'filter-select';
-    statusSelect.setAttribute('aria-label', 'Filter batches by status');
-    statusSelect.innerHTML = `
-      <option value="">All Statuses</option>
-      <option value="uploading">Uploading</option>
-      <option value="validating">Validating</option>
-      <option value="validated">Validated (Ready to Review)</option>
-      <option value="validated_with_errors">Validated with Errors</option>
-      <option value="committing">Committing</option>
-      <option value="committed">Committed</option>
-      <option value="committed_with_errors">Committed with Errors</option>
-      <option value="failed">Failed</option>
-    `;
-
-    statusSelect.addEventListener('change', () => {
-      this.activeStatus = statusSelect.value;
-      this.currentPage = 1;
-      this.loadBatches();
-    });
-
-    this.dataTable.setCustomFilterSlot(statusSelect);
   }
 
   public async render(): Promise<HTMLElement> {
@@ -241,21 +73,37 @@ export class BatchesView {
         <div class="card-header">
           <div>
             <h3 class="card-title">All Batches</h3>
-            <p class="card-subtitle">Search, filter columns, sort by status or date, and open batches</p>
+            <p class="card-subtitle">Search, filter by status, sort by date, and open batches</p>
           </div>
 
-          <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh-batches">
-            <i class="fa-solid fa-rotate-right" aria-hidden="true"></i> Refresh
-          </button>
+          <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+            <select class="filter-select" id="batches-status-filter" aria-label="Filter batches by status">
+              <option value="">All Statuses</option>
+              <option value="uploading">Uploading</option>
+              <option value="validating">Validating</option>
+              <option value="validated">Validated (Ready to Review)</option>
+              <option value="validated_with_errors">Validated with Errors</option>
+              <option value="committing">Committing</option>
+              <option value="committed">Committed</option>
+              <option value="committed_with_errors">Committed with Errors</option>
+              <option value="failed">Failed</option>
+            </select>
+
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh-batches">
+              <i class="fa-solid fa-rotate-right" aria-hidden="true"></i> Refresh
+            </button>
+          </div>
         </div>
 
         <div class="card-body" id="batches-table-slot" style="padding-top: 1rem;">
-          <!-- DataTable is injected here -->
+          <div id="batches-table-loading" style="text-align: center; padding: 3rem 1rem; color: var(--neutral-500);">
+            <i class="fa-solid fa-spinner fa-spin" style="font-size: 1.5rem; margin-bottom: 0.5rem; display: block;"></i>
+            <span>Loading batches...</span>
+          </div>
+          <table id="batches-table" class="display nowrap dataTable" style="width: 100%; display: none;"></table>
         </div>
       </div>
     `;
-
-    this.container.querySelector('#batches-table-slot')?.appendChild(this.dataTable.getElement());
 
     this.container.querySelector('#btn-create-batch-view')?.addEventListener('click', () => {
       NewBatchModal.open();
@@ -265,35 +113,182 @@ export class BatchesView {
       this.loadBatches();
     });
 
+    const statusFilter = this.container.querySelector<HTMLSelectElement>('#batches-status-filter');
+    statusFilter?.addEventListener('change', () => {
+      this.activeStatus = statusFilter.value;
+      this.loadBatches();
+    });
+
     // Mount UI immediately and load data asynchronously so router never hangs
     void this.loadBatches();
     return this.container;
   }
 
   public async loadBatches(): Promise<void> {
-    this.dataTable.setLoading(true);
+    const loadingEl = this.container.querySelector<HTMLElement>('#batches-table-loading');
+    const tableEl = this.container.querySelector<HTMLTableElement>('#batches-table');
+    if (!this.dt && loadingEl) loadingEl.style.display = 'block';
 
     try {
-      let filterExpr = '';
-      if (this.searchQuery) {
-        const q = this.searchQuery.replace(/'/g, "''");
-        filterExpr = `contains(batch_name, '${q}') or contains(file_name, '${q}')`;
-      }
-
       const response: PaginatedResponse<UploadSession> = await ApiClient.listUploads({
-        page: this.currentPage,
-        limit: this.pageSize,
+        limit: 100,
         status: this.activeStatus || undefined,
-        $filter: filterExpr || undefined,
-        $orderby: this.orderBy,
+        $orderby: 'created_at desc',
         $count: true
       });
 
-      this.dataTable.setData(response.data, response.pagination.total, response.pagination.page);
+      if (loadingEl) loadingEl.style.display = 'none';
+      if (tableEl) tableEl.style.display = 'table';
+
       this.updateMetrics(response);
+
+      if (this.dt) {
+        this.dt.clear();
+        this.dt.rows.add(response.data);
+        this.dt.draw();
+      } else if (tableEl) {
+        this.initDataTable(tableEl, response.data);
+      }
     } catch (err) {
-      this.dataTable.setError(err instanceof Error ? err.message : String(err));
+      if (loadingEl) {
+        loadingEl.style.display = 'block';
+        loadingEl.innerHTML = `
+          <div style="color: var(--danger);">
+            <div style="font-weight: 700; margin-bottom: 0.25rem;"><i class="fa-solid fa-triangle-exclamation"></i> Error Loading Batches</div>
+            <div style="font-size: 0.85rem;">${escapeHtml(err instanceof Error ? err.message : String(err))}</div>
+          </div>
+        `;
+      }
     }
+  }
+
+  private initDataTable(tableEl: HTMLTableElement, data: UploadSession[]): void {
+    if (typeof DataTable === 'undefined') {
+      setTimeout(() => this.initDataTable(tableEl, data), 100);
+      return;
+    }
+
+    this.dt = new DataTable(tableEl, {
+      data,
+      pageLength: 15,
+      lengthMenu: [10, 15, 25, 50, 100],
+      order: [[4, 'desc']],
+      responsive: true,
+      columns: [
+        {
+          title: 'Batch Name & File',
+          data: null,
+          render: (_data: unknown, _type: string, row: UploadSession) => `
+            <div>
+              <div class="cell-bold">${escapeHtml(row.batch_name)}</div>
+              <div style="font-size: 0.75rem; color: var(--neutral-500); margin-top: 0.15rem;">
+                <i class="fa-regular fa-file-excel" aria-hidden="true"></i> ${escapeHtml(row.file_name)} (${(row.file_size / 1024).toFixed(1)} KB)
+              </div>
+            </div>
+          `
+        },
+        {
+          title: 'Status',
+          data: 'status',
+          width: '150px',
+          render: (val: string) => `
+            <span class="badge badge-${val}">
+              ${formatStatusLabel(val)}
+            </span>
+          `
+        },
+        {
+          title: 'Progress',
+          data: null,
+          width: '180px',
+          orderable: false,
+          render: (_data: unknown, _type: string, row: UploadSession) => {
+            const isComplete = row.status === 'committed' || row.status === 'committed_with_errors';
+            const isValidating = row.status === 'validating';
+            const isUploading = row.status === 'uploading';
+
+            if (isUploading) {
+              return `
+                <div style="font-size: 0.75rem; color: var(--neutral-600); margin-bottom: 0.2rem;">
+                  Uploading: ${row.upload_progress}% (${row.uploaded_chunks.length}/${row.chunk_count} chunks)
+                </div>
+                <div class="progress-container"><div class="progress-bar-fill animated" style="width: ${row.upload_progress}%;"></div></div>
+              `;
+            } else if (isValidating) {
+              return `
+                <div style="font-size: 0.75rem; color: var(--neutral-600); margin-bottom: 0.2rem;">
+                  Validating: ${row.process_progress}% (${row.processed_rows}/${row.total_rows} rows)
+                </div>
+                <div class="progress-container"><div class="progress-bar-fill animated" style="width: ${row.process_progress}%;"></div></div>
+              `;
+            } else if (isComplete) {
+              return `
+                <div style="font-size: 0.75rem; color: var(--success-text); font-weight: 600;">
+                  100% Processed (${row.onboarded_rows} onboarded)
+                </div>
+                <div class="progress-container"><div class="progress-bar-fill success" style="width: 100%;"></div></div>
+              `;
+            } else {
+              return `
+                <div style="font-size: 0.75rem; color: var(--neutral-500);">
+                  ${row.total_rows} total rows
+                </div>
+                <div class="progress-container"><div class="progress-bar-fill" style="width: 100%;"></div></div>
+              `;
+            }
+          }
+        },
+        {
+          title: 'Row Breakdown',
+          data: null,
+          orderable: false,
+          render: (_data: unknown, _type: string, row: UploadSession) => `
+            <div style="font-size: 0.8rem; line-height: 1.4;">
+              <span style="color: var(--success); font-weight: 600;">${row.valid_rows} Valid</span> |
+              <span style="color: var(--danger); font-weight: 600;">${row.invalid_rows} Invalid</span> |
+              <span style="color: var(--secondary); font-weight: 600;">${row.onboarded_rows} Onboarded</span>
+            </div>
+          `
+        },
+        {
+          title: 'Uploaded At',
+          data: 'created_at',
+          width: '140px',
+          className: 'cell-mono',
+          render: (val: string) => `<span style="font-size: 0.8rem; color: var(--neutral-600);">${formatDate(val)}</span>`
+        },
+        {
+          title: 'Action',
+          data: null,
+          orderable: false,
+          searchable: false,
+          width: '110px',
+          className: 'text-right',
+          render: (_data: unknown, _type: string, row: UploadSession) => {
+            const isUploading = row.status === 'uploading';
+            return `<a href="#/batch/${row.id}" class="btn ${isUploading ? 'btn-primary' : 'btn-secondary'} btn-sm">${isUploading ? 'Resume &rarr;' : 'Open &rarr;'}</a>`;
+          }
+        }
+      ],
+      language: {
+        search: '_INPUT_',
+        searchPlaceholder: 'Search batches by name or file...',
+        emptyTable: 'No upload batches found',
+        zeroRecords: 'No batches matched your filter criteria.'
+      }
+    });
+
+    tableEl.addEventListener('click', (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName.toLowerCase() === 'a' || target.closest('a')) return;
+      const tr = target.closest('tr');
+      if (tr && this.dt) {
+        const rowData = this.dt.row(tr).data() as UploadSession;
+        if (rowData && rowData.id) {
+          window.location.hash = `#/batch/${rowData.id}`;
+        }
+      }
+    });
   }
 
   private updateMetrics(response: PaginatedResponse<UploadSession>): void {
@@ -314,7 +309,12 @@ export class BatchesView {
     if (onboardedEl) onboardedEl.textContent = String(totalOnboarded);
   }
 
-  public destroy(): void {}
+  public destroy(): void {
+    if (this.dt) {
+      this.dt.destroy();
+      this.dt = null;
+    }
+  }
 }
 
 function escapeHtml(str: string): string {

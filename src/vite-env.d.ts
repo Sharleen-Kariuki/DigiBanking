@@ -9,3 +9,9 @@ interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
 
+declare const DataTable: any;
+
+interface Window {
+  DataTable: any;
+}
+

@@ -4,7 +4,6 @@ import { ChunkedUploader } from '../services/chunked-uploader';
 import { UploadSession, UploadRecord, PaginatedResponse } from '../types';
 import { ToastManager } from '../components/toast';
 import { Modal } from '../components/modal';
-import { DataTable, DataTableColumn } from '../services/datatable';
 
 export class BatchDetailView {
   private uploadId: string;
@@ -12,186 +11,15 @@ export class BatchDetailView {
   private upload: UploadSession | null = null;
   private sseClient: SseClient | null = null;
   private currentRecordsResponse: PaginatedResponse<UploadRecord> | null = null;
-  private dataTable: DataTable<UploadRecord>;
+  private dt: any = null;
 
   // Filter state
   private activeStatusFilter = '';
-  private searchQuery = '';
-  private currentPage = 1;
-  private pageSize = 20;
-  private orderBy = 'row_number asc';
 
   constructor(uploadId: string) {
     this.uploadId = uploadId;
     this.container = document.createElement('div');
     this.container.className = 'batch-detail-view';
-
-    const columns: DataTableColumn<UploadRecord>[] = [
-      {
-        id: 'row_number',
-        header: 'Row',
-        width: '75px',
-        sortable: true,
-        sortKey: 'row_number',
-        className: 'cell-mono cell-bold',
-        render: row => String(row.row_number)
-      },
-      {
-        id: 'status',
-        header: 'Status',
-        width: '130px',
-        sortable: true,
-        sortKey: 'status',
-        render: row => `
-          <span class="badge badge-${row.status}">
-            ${formatStatusLabel(row.status)}
-          </span>
-        `
-      },
-      {
-        id: 'member_number',
-        header: 'Member #',
-        sortable: true,
-        sortKey: 'member_number',
-        className: 'cell-mono cell-bold',
-        render: row => row.member_number ? escapeHtml(row.member_number) : '<span style="color: var(--neutral-400);">Not Set</span>'
-      },
-      {
-        id: 'full_name',
-        header: 'Name',
-        sortable: true,
-        sortKey: 'first_name',
-        className: 'cell-bold',
-        render: row => escapeHtml(`${row.first_name || ''} ${row.last_name || ''}`.trim() || '—')
-      },
-      {
-        id: 'identifiers',
-        header: 'Phone / ID',
-        className: 'cell-mono',
-        render: row => {
-          const id = row.id_number ? `ID: ${row.id_number}` : '';
-          const tel = row.phone_number ? `Tel: ${row.phone_number}` : '';
-          if (id && tel) return `<div>${escapeHtml(id)}</div><div style="color: var(--neutral-500); font-size: 0.75rem;">${escapeHtml(tel)}</div>`;
-          return escapeHtml(id || tel || '—');
-        }
-      },
-      {
-        id: 'branch_account',
-        header: 'Branch & Account',
-        render: row => escapeHtml(`${row.branch || '—'} (${row.account_type || '—'})`)
-      },
-      {
-        id: 'reason',
-        header: 'Reason / Findings',
-        className: 'cell-reason',
-        render: row => row.reason
-          ? `<span style="color: var(--danger-text);">${escapeHtml(row.reason)}</span>`
-          : '<span style="color: var(--neutral-400); font-style: italic;">No errors</span>'
-      },
-      {
-        id: 'actions',
-        header: 'Action',
-        hideable: false,
-        width: '90px',
-        align: 'right',
-        render: row => {
-          const btn = document.createElement('button');
-          btn.type = 'button';
-          btn.className = 'btn btn-secondary btn-sm';
-          btn.textContent = 'Inspect';
-          btn.addEventListener('click', e => {
-            e.stopPropagation();
-            this.openRecordInspector(row);
-          });
-          return btn;
-        }
-      }
-    ];
-
-    this.dataTable = new DataTable<UploadRecord>({
-      tableId: `batch_records_${this.uploadId}`,
-      columns,
-      pageSize: this.pageSize,
-      searchPlaceholder: 'Search by name, member #, email, ID...',
-      initialSort: { columnId: 'row_number', direction: 'asc' },
-      emptyTitle: 'No records found',
-      emptyMessage: 'No records matched the selected status or search query.',
-      onSearch: query => {
-        this.searchQuery = query;
-        this.currentPage = 1;
-        this.loadRecords();
-      },
-      onSort: (_colId, dir, sortKey) => {
-        this.orderBy = `${sortKey} ${dir}`;
-        this.currentPage = 1;
-        this.loadRecords();
-      },
-      onPageChange: page => {
-        this.currentPage = page;
-        this.loadRecords();
-      },
-      onPageSizeChange: size => {
-        this.pageSize = size;
-        this.currentPage = 1;
-        this.loadRecords();
-      },
-      onRowClick: row => {
-        this.openRecordInspector(row);
-      }
-    });
-
-    this.setupExportActions();
-  }
-
-  private setupExportActions(): void {
-    const csvBtn = document.createElement('button');
-    csvBtn.type = 'button';
-    csvBtn.className = 'btn btn-secondary btn-sm';
-    csvBtn.title = 'Export records as CSV';
-    csvBtn.innerHTML = '<i class="fa-solid fa-file-csv"></i> CSV';
-    csvBtn.addEventListener('click', async () => {
-      try {
-        ToastManager.info('Preparing CSV export...');
-        await ApiClient.exportRecords(this.uploadId, 'csv', this.activeStatusFilter || undefined);
-        ToastManager.success('CSV downloaded successfully.');
-      } catch (err) {
-        ToastManager.error(`Export failed: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    });
-
-    const xlsxBtn = document.createElement('button');
-    xlsxBtn.type = 'button';
-    xlsxBtn.className = 'btn btn-secondary btn-sm';
-    xlsxBtn.title = 'Export records as XLSX';
-    xlsxBtn.innerHTML = '<i class="fa-solid fa-file-excel"></i> XLSX';
-    xlsxBtn.addEventListener('click', async () => {
-      try {
-        ToastManager.info('Preparing Excel export...');
-        await ApiClient.exportRecords(this.uploadId, 'xlsx', this.activeStatusFilter || undefined);
-        ToastManager.success('Excel workbook downloaded successfully.');
-      } catch (err) {
-        ToastManager.error(`Export failed: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    });
-
-    const invalidBtn = document.createElement('button');
-    invalidBtn.type = 'button';
-    invalidBtn.className = 'btn btn-outline-primary btn-sm';
-    invalidBtn.title = 'Download only invalid & duplicate records';
-    invalidBtn.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Invalid Rows';
-    invalidBtn.addEventListener('click', async () => {
-      try {
-        ToastManager.info('Downloading invalid and duplicate rows...');
-        await ApiClient.downloadInvalidRows(this.uploadId);
-        ToastManager.success('Invalid rows workbook downloaded.');
-      } catch (err) {
-        ToastManager.error(`Download failed: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    });
-
-    this.dataTable.addCustomAction(csvBtn);
-    this.dataTable.addCustomAction(xlsxBtn);
-    this.dataTable.addCustomAction(invalidBtn);
   }
 
   public async render(): Promise<HTMLElement> {
@@ -264,13 +92,13 @@ export class BatchDetailView {
 
       <!-- Records Table Card -->
       <div class="card">
-        <div class="card-header">
+        <div class="card-header" style="flex-wrap: wrap; gap: 0.75rem;">
           <div>
             <h3 class="card-title">Workbook Records</h3>
-            <p class="card-subtitle">Inspect individual records, toggle columns, search in real-time, and export results</p>
+            <p class="card-subtitle">Inspect individual records, search in real-time, filter status, and export results</p>
           </div>
 
-          <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+          <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
             <div class="filter-tabs" id="status-filter-tabs">
               <button type="button" class="filter-tab active" data-status="">All <span class="filter-tab-count" id="count-all">0</span></button>
               <button type="button" class="filter-tab" data-status="valid">Valid <span class="filter-tab-count" id="count-valid">0</span></button>
@@ -278,11 +106,27 @@ export class BatchDetailView {
               <button type="button" class="filter-tab" data-status="invalid">Invalid <span class="filter-tab-count" id="count-invalid">0</span></button>
               <button type="button" class="filter-tab" data-status="duplicate">Duplicate <span class="filter-tab-count" id="count-duplicate">0</span></button>
             </div>
+
+            <div style="display: flex; gap: 0.4rem; align-items: center;">
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-export-csv" title="Export records as CSV">
+                <i class="fa-solid fa-file-csv" aria-hidden="true"></i> CSV
+              </button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-export-xlsx" title="Export records as XLSX">
+                <i class="fa-solid fa-file-excel" aria-hidden="true"></i> XLSX
+              </button>
+              <button type="button" class="btn btn-outline-primary btn-sm" id="btn-export-invalid" title="Download only invalid & duplicate records">
+                <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Invalid Rows
+              </button>
+            </div>
           </div>
         </div>
 
         <div class="card-body" id="records-table-slot" style="padding-top: 1rem;">
-          <!-- DataTable is injected here -->
+          <div id="records-table-loading" style="text-align: center; padding: 3rem 1rem; color: var(--neutral-500);">
+            <i class="fa-solid fa-spinner fa-spin" style="font-size: 1.5rem; margin-bottom: 0.5rem; display: block;"></i>
+            <span>Loading records...</span>
+          </div>
+          <table id="records-table" class="display nowrap dataTable" style="width: 100%; display: none;"></table>
         </div>
       </div>
 
@@ -304,8 +148,6 @@ export class BatchDetailView {
       </div>
     `;
 
-    this.container.querySelector('#records-table-slot')?.appendChild(this.dataTable.getElement());
-
     this.bindEvents();
     // Mount UI immediately and load data asynchronously so router never hangs
     void this.loadBatch();
@@ -320,9 +162,39 @@ export class BatchDetailView {
         this.container.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
         tab.classList.add('active');
         this.activeStatusFilter = tab.dataset.status || '';
-        this.currentPage = 1;
         this.loadRecords();
       });
+    });
+
+    // Export buttons
+    this.container.querySelector('#btn-export-csv')?.addEventListener('click', async () => {
+      try {
+        ToastManager.info('Preparing CSV export...');
+        await ApiClient.exportRecords(this.uploadId, 'csv', this.activeStatusFilter || undefined);
+        ToastManager.success('CSV downloaded successfully.');
+      } catch (err) {
+        ToastManager.error(`Export failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    });
+
+    this.container.querySelector('#btn-export-xlsx')?.addEventListener('click', async () => {
+      try {
+        ToastManager.info('Preparing Excel export...');
+        await ApiClient.exportRecords(this.uploadId, 'xlsx', this.activeStatusFilter || undefined);
+        ToastManager.success('Excel workbook downloaded successfully.');
+      } catch (err) {
+        ToastManager.error(`Export failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    });
+
+    this.container.querySelector('#btn-export-invalid')?.addEventListener('click', async () => {
+      try {
+        ToastManager.info('Downloading invalid and duplicate rows...');
+        await ApiClient.downloadInvalidRows(this.uploadId);
+        ToastManager.success('Invalid rows workbook downloaded.');
+      } catch (err) {
+        ToastManager.error(`Download failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
     });
 
     // Toggle event feed
@@ -581,33 +453,137 @@ export class BatchDetailView {
   }
 
   public async loadRecords(): Promise<void> {
-    this.dataTable.setLoading(true);
+    const loadingEl = this.container.querySelector<HTMLElement>('#records-table-loading');
+    const tableEl = this.container.querySelector<HTMLTableElement>('#records-table');
+    if (!this.dt && loadingEl) loadingEl.style.display = 'block';
 
     try {
-      let filterExpr = '';
-      if (this.searchQuery) {
-        const q = this.searchQuery.replace(/'/g, "''");
-        filterExpr = `contains(first_name, '${q}') or contains(last_name, '${q}') or contains(member_number, '${q}') or contains(email, '${q}')`;
-      }
-
       this.currentRecordsResponse = await ApiClient.listUploadRecords(this.uploadId, {
-        page: this.currentPage,
-        limit: this.pageSize,
+        limit: 500,
         status: this.activeStatusFilter || undefined,
-        $filter: filterExpr || undefined,
-        $orderby: this.orderBy,
+        $orderby: 'row_number asc',
         $count: true
       });
 
-      this.dataTable.setData(
-        this.currentRecordsResponse.data,
-        this.currentRecordsResponse.pagination.total,
-        this.currentRecordsResponse.pagination.page
-      );
+      if (loadingEl) loadingEl.style.display = 'none';
+      if (tableEl) tableEl.style.display = 'table';
+
       this.updateStatusTabCounts();
+
+      if (this.dt) {
+        this.dt.clear();
+        this.dt.rows.add(this.currentRecordsResponse.data);
+        this.dt.draw();
+      } else if (tableEl) {
+        this.initDataTable(tableEl, this.currentRecordsResponse.data);
+      }
     } catch (err) {
-      this.dataTable.setError(err instanceof Error ? err.message : String(err));
+      if (loadingEl) {
+        loadingEl.style.display = 'block';
+        loadingEl.innerHTML = `
+          <div style="color: var(--danger);">
+            <div style="font-weight: 700; margin-bottom: 0.25rem;"><i class="fa-solid fa-triangle-exclamation"></i> Error Loading Records</div>
+            <div style="font-size: 0.85rem;">${escapeHtml(err instanceof Error ? err.message : String(err))}</div>
+          </div>
+        `;
+      }
     }
+  }
+
+  private initDataTable(tableEl: HTMLTableElement, data: UploadRecord[]): void {
+    if (typeof DataTable === 'undefined') {
+      setTimeout(() => this.initDataTable(tableEl, data), 100);
+      return;
+    }
+
+    this.dt = new DataTable(tableEl, {
+      data,
+      pageLength: 20,
+      lengthMenu: [10, 20, 50, 100],
+      order: [[0, 'asc']],
+      responsive: true,
+      columns: [
+        {
+          title: 'Row',
+          data: 'row_number',
+          width: '75px',
+          className: 'cell-mono cell-bold',
+          render: (val: number) => String(val)
+        },
+        {
+          title: 'Status',
+          data: 'status',
+          width: '130px',
+          render: (val: string) => `
+            <span class="badge badge-${val}">
+              ${formatStatusLabel(val)}
+            </span>
+          `
+        },
+        {
+          title: 'Member #',
+          data: 'member_number',
+          className: 'cell-mono cell-bold',
+          render: (val: string) => val ? escapeHtml(val) : '<span style="color: var(--neutral-400);">Not Set</span>'
+        },
+        {
+          title: 'Name',
+          data: null,
+          className: 'cell-bold',
+          render: (_data: unknown, _type: string, row: UploadRecord) => escapeHtml(`${row.first_name || ''} ${row.last_name || ''}`.trim() || '—')
+        },
+        {
+          title: 'Phone / ID',
+          data: null,
+          className: 'cell-mono',
+          render: (_data: unknown, _type: string, row: UploadRecord) => {
+            const id = row.id_number ? `ID: ${row.id_number}` : '';
+            const tel = row.phone_number ? `Tel: ${row.phone_number}` : '';
+            if (id && tel) return `<div>${escapeHtml(id)}</div><div style="color: var(--neutral-500); font-size: 0.75rem;">${escapeHtml(tel)}</div>`;
+            return escapeHtml(id || tel || '—');
+          }
+        },
+        {
+          title: 'Branch & Account',
+          data: null,
+          render: (_data: unknown, _type: string, row: UploadRecord) => escapeHtml(`${row.branch || '—'} (${row.account_type || '—'})`)
+        },
+        {
+          title: 'Reason / Findings',
+          data: 'reason',
+          className: 'cell-reason',
+          render: (val: string) => val
+            ? `<span style="color: var(--danger-text);">${escapeHtml(val)}</span>`
+            : '<span style="color: var(--neutral-400); font-style: italic;">No errors</span>'
+        },
+        {
+          title: 'Action',
+          data: null,
+          orderable: false,
+          searchable: false,
+          width: '90px',
+          className: 'text-right',
+          render: () => `<button type="button" class="btn btn-secondary btn-sm btn-inspect-record">Inspect</button>`
+        }
+      ],
+      language: {
+        search: '_INPUT_',
+        searchPlaceholder: 'Search records by name, ID, member #...',
+        emptyTable: 'No records found',
+        zeroRecords: 'No records matched the selected status or query.'
+      }
+    });
+
+    tableEl.addEventListener('click', (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      const tr = target.closest('tr');
+      if (tr && this.dt) {
+        const rowData = this.dt.row(tr).data() as UploadRecord;
+        if (rowData) {
+          this.openRecordInspector(rowData);
+        }
+      }
+    });
   }
 
   private updateStatusTabCounts(): void {
@@ -648,44 +624,45 @@ export class BatchDetailView {
 
       ${record.reason ? `
         <div style="background-color: var(--danger-bg); border: 1px solid var(--danger-border); border-radius: var(--radius-md); padding: 0.85rem; margin-bottom: 1.25rem;">
-          <div style="font-weight: 700; font-size: 0.85rem; color: var(--danger-text);">Validation Finding:</div>
-          <div style="font-size: 0.85rem; color: var(--danger-text); margin-top: 0.2rem;">${escapeHtml(record.reason)}</div>
+          <div style="font-weight: 700; font-size: 0.85rem; color: var(--danger-text); margin-bottom: 0.25rem;">Validation Finding</div>
+          <div style="font-size: 0.85rem; color: var(--danger-text);">${escapeHtml(record.reason)}</div>
         </div>
       ` : ''}
 
       <div style="border-top: 1px solid var(--neutral-200); padding-top: 1rem;">
-        <h4 style="font-size: 0.9rem; font-weight: 700; margin-bottom: 0.75rem; color: var(--neutral-800);">Member Details</h4>
+        <h4 style="font-size: 0.85rem; font-weight: 700; color: var(--neutral-700); text-transform: uppercase; margin-bottom: 0.75rem;">Member Record Details</h4>
         <dl style="display: grid; grid-template-columns: 140px 1fr; gap: 0.5rem; font-size: 0.875rem;">
-          <dt style="color: var(--neutral-500);">Full Name:</dt>
-          <dd style="font-weight: 600;">${escapeHtml(record.first_name)} ${escapeHtml(record.last_name)}</dd>
-
           <dt style="color: var(--neutral-500);">Member Number:</dt>
-          <dd class="cell-mono">${record.member_number || '—'}</dd>
+          <dd class="cell-mono">${escapeHtml(record.member_number || '—')}</dd>
+
+          <dt style="color: var(--neutral-500);">Full Name:</dt>
+          <dd>${escapeHtml(`${record.first_name || ''} ${record.last_name || ''}`.trim() || '—')}</dd>
 
           <dt style="color: var(--neutral-500);">National ID:</dt>
-          <dd class="cell-mono">${record.id_number || '—'}</dd>
+          <dd class="cell-mono">${escapeHtml(record.id_number || '—')}</dd>
 
           <dt style="color: var(--neutral-500);">Phone Number:</dt>
-          <dd class="cell-mono">${record.phone_number || '—'}</dd>
+          <dd class="cell-mono">${escapeHtml(record.phone_number || '—')}</dd>
 
           <dt style="color: var(--neutral-500);">Date of Birth:</dt>
-          <dd class="cell-mono">${record.date_of_birth || '—'}</dd>
+          <dd class="cell-mono">${escapeHtml(record.date_of_birth || '—')}</dd>
 
           <dt style="color: var(--neutral-500);">Email Address:</dt>
-          <dd>${record.email || '—'}</dd>
+          <dd>${escapeHtml(record.email || '—')}</dd>
 
-          <dt style="color: var(--neutral-500);">Branch:</dt>
-          <dd>${record.branch || '—'}</dd>
+          <dt style="color: var(--neutral-500);">Assigned Branch:</dt>
+          <dd>${escapeHtml(record.branch || '—')}</dd>
 
           <dt style="color: var(--neutral-500);">Account Type:</dt>
-          <dd style="text-transform: capitalize;">${record.account_type || '—'}</dd>
+          <dd style="text-transform: capitalize;">${escapeHtml(record.account_type || '—')}</dd>
         </dl>
       </div>
     `;
 
     const modal = new Modal({
-      title: `Inspect Record — Row #${record.row_number}`,
+      title: `Workbook Record — Row #${record.row_number}`,
       content,
+      maxWidth: '560px',
       footerButtons: [
         {
           label: 'Close',
@@ -694,59 +671,75 @@ export class BatchDetailView {
         }
       ]
     });
+
     modal.open();
   }
 
   private initSseStream(): void {
     if (this.sseClient) return;
 
+    const listEl = this.container.querySelector('#event-log-list');
+    const pillEl = this.container.querySelector('#sse-connection-pill');
+
     this.sseClient = new SseClient(this.uploadId);
 
-    const connectionPill = this.container.querySelector('#sse-connection-pill');
-    const logList = this.container.querySelector('#event-log-list');
-
     this.sseClient.onStateChange(state => {
-      if (connectionPill) {
-        connectionPill.textContent = state.toUpperCase();
+      if (pillEl) {
         if (state === 'connected') {
-          connectionPill.className = 'badge badge-valid';
-        } else if (state === 'reconnecting') {
-          connectionPill.className = 'badge badge-warning';
+          pillEl.className = 'badge badge-success';
+          pillEl.textContent = 'Live Connected';
+        } else if (state === 'connecting' || state === 'reconnecting') {
+          pillEl.className = 'badge badge-validating';
+          pillEl.textContent = state === 'reconnecting' ? 'Reconnecting' : 'Connecting';
         } else {
-          connectionPill.className = 'badge badge-validated';
+          pillEl.className = 'badge badge-danger';
+          pillEl.textContent = 'Disconnected';
         }
       }
     });
 
     this.sseClient.onMessage((msg: SseEventMessage) => {
-      if (logList) {
-        const entry = document.createElement('div');
-        entry.className = 'log-entry';
-        const timeStr = msg.timestamp.toTimeString().split(' ')[0];
-        entry.innerHTML = `
-          <span class="log-time">[${timeStr}]</span>
-          <span class="log-badge ${getEventBadgeClass(msg.event)}">${msg.event}</span>
-          <span>${formatEventPayload(msg.event, msg.payload)}</span>
+      if (listEl) {
+        if (listEl.querySelector('div')?.style.fontStyle === 'italic') {
+          listEl.innerHTML = '';
+        }
+        const item = document.createElement('div');
+        item.className = 'event-log-item';
+        item.innerHTML = `
+          <span class="event-time">${new Date().toLocaleTimeString()}</span>
+          <span class="event-type badge badge-${getEventBadgeClass(msg.event)}">${escapeHtml(msg.event)}</span>
+          <span class="event-desc">${escapeHtml(formatEventPayload(msg.event, msg.payload))}</span>
         `;
-        logList.insertBefore(entry, logList.firstChild);
+        listEl.insertBefore(item, listEl.firstChild);
       }
 
-      if (['row_processed', 'validation_completed', 'row_committed', 'commit_completed'].includes(msg.event)) {
-        this.refreshStateFromEvent(msg);
-      }
+      this.handleSseUpdate(msg);
     });
 
     this.sseClient.connect();
   }
 
-  private async refreshStateFromEvent(msg: SseEventMessage): Promise<void> {
-    if (msg.event === 'validation_completed' || msg.event === 'commit_completed') {
-      ToastManager.info(`Server reported: ${msg.event.replace('_', ' ')}`);
-      await this.loadBatch();
-    } else if (msg.event === 'row_processed') {
-      const payload = msg.payload as { processed_rows?: number; row_number?: number };
-      if (this.upload && payload.processed_rows) {
-        this.upload.processed_rows = payload.processed_rows;
+  private handleSseUpdate(msg: SseEventMessage): void {
+    if (!this.upload) return;
+
+    if (msg.event === 'row_processed') {
+      const p = msg.payload as { processed_rows?: number; valid_rows?: number; invalid_rows?: number; total_rows?: number; percent?: number };
+      if (p.processed_rows !== undefined) this.upload.processed_rows = p.processed_rows;
+      if (p.valid_rows !== undefined) this.upload.valid_rows = p.valid_rows;
+      if (p.invalid_rows !== undefined) this.upload.invalid_rows = p.invalid_rows;
+      if (p.percent !== undefined) this.upload.process_progress = p.percent;
+
+      this.renderStats();
+      this.updateBanners();
+    } else if (msg.event === 'validation_completed') {
+      this.loadBatch();
+    } else if (msg.event === 'commit_completed') {
+      this.loadBatch();
+    } else if (msg.event === 'upload_status_changed') {
+      const p = msg.payload as { status?: string };
+      if (p.status) {
+        this.upload.status = p.status as any;
+        this.renderHeader();
         this.updateBanners();
       }
     }
@@ -756,6 +749,10 @@ export class BatchDetailView {
     if (this.sseClient) {
       this.sseClient.close();
       this.sseClient = null;
+    }
+    if (this.dt) {
+      this.dt.destroy();
+      this.dt = null;
     }
   }
 }
