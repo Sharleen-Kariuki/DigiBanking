@@ -147,17 +147,17 @@ export class SettingsDrawer {
         
         
 
-          <div class="form-group" style="margin-bottom: 0.75rem;">
-            <label class="form-label" for="drawer-api-url" style="font-size: 0.8rem;">API Base Address</label>
-            <input
-              type="url"
-              id="drawer-api-url"
-              class="form-control"
-              style="font-size: 0.85rem;"
-              value="${currentApiUrl}"
-              placeholder="${apiConfig.getDefaultUrl()}"
-            />
-          </div>
+          // <div class="form-group" style="margin-bottom: 0.75rem;">
+          //   <label class="form-label" for="drawer-api-url" style="font-size: 0.8rem;">API Base Address</label>
+          //   <input
+          //     type="url"
+          //     id="drawer-api-url"
+          //     class="form-control"
+          //     style="font-size: 0.85rem;"
+          //     value="${currentApiUrl}"
+          //     placeholder="${apiConfig.getDefaultUrl()}"
+          //   />
+          // </div>
 
           
 

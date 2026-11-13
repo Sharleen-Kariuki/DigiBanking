@@ -13,7 +13,7 @@ const envUrl =
   (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() ||
   (import.meta.env.VITE_DEFAULT_URL as string | undefined)?.trim();
 
-const DEFAULT_URL = envUrl || 'https://digibanking.onrender.com/api/v1';
+const DEFAULT_URL = envUrl || 'http://localhost:3000';
 
 class ApiConfigManager {
   private currentBaseUrl: string;
@@ -23,7 +23,7 @@ class ApiConfigManager {
     const saved = localStorage.getItem(STORAGE_KEY);
     // If localStorage has an old localhost URL or legacy host but DEFAULT_URL is configured, upgrade to DEFAULT_URL
     if (saved && saved.trim()) {
-      if ((saved.includes('localhost') || saved.includes('fhcl.co.ke')) && DEFAULT_URL.includes('onrender.com')) {
+      if (saved.includes('localhost')  && DEFAULT_URL.includes('onrender.com')) {
         this.currentBaseUrl = DEFAULT_URL;
         localStorage.setItem(STORAGE_KEY, DEFAULT_URL);
       } else {
