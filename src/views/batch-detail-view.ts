@@ -1,4 +1,4 @@
-import { ApiClient } from '../services/api-client';
+﻿import { ApiClient } from '../services/api-client';
 import { SseClient, SseEventMessage } from '../services/sse-client';
 import { ChunkedUploader } from '../services/chunked-uploader';
 import { UploadSession, UploadRecord, PaginatedResponse } from '../types';
@@ -108,15 +108,40 @@ export class BatchDetailView {
             </div>
 
             <div style="display: flex; gap: 0.4rem; align-items: center;">
-              <button type="button" class="btn btn-secondary btn-sm" id="btn-export-csv" title="Export records as CSV">
-                <i class="fa-solid fa-file-csv" aria-hidden="true"></i> CSV
-              </button>
-              <button type="button" class="btn btn-secondary btn-sm" id="btn-export-xlsx" title="Export records as XLSX">
-                <i class="fa-solid fa-file-excel" aria-hidden="true"></i> XLSX
-              </button>
-              <button type="button" class="btn btn-outline-primary btn-sm" id="btn-export-invalid" title="Download only invalid & duplicate records">
-                <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Invalid Rows
-              </button>
+              <!-- CSV export dropdown -->
+              <div class="export-dropdown" id="csv-dropdown-wrap">
+                <button type="button" class="btn btn-secondary btn-sm export-dropdown-toggle" id="btn-export-csv" aria-haspopup="true" aria-expanded="false">
+                  <i class="fa-solid fa-file-csv" aria-hidden="true"></i> CSV <i class="fa-solid fa-chevron-down" style="font-size:0.65rem; margin-left:2px;" aria-hidden="true"></i>
+                </button>
+                <div class="export-dropdown-menu" id="csv-dropdown-menu" role="menu">
+                  <button type="button" class="export-dropdown-item" data-format="csv" data-status="" role="menuitem">
+                    <i class="fa-solid fa-table" aria-hidden="true"></i> All Rows
+                  </button>
+                  <button type="button" class="export-dropdown-item" data-format="csv" data-status="invalid" role="menuitem">
+                    <i class="fa-solid fa-circle-xmark" aria-hidden="true"></i> Invalid Rows
+                  </button>
+                  <button type="button" class="export-dropdown-item" data-format="csv" data-status="duplicate" role="menuitem">
+                    <i class="fa-solid fa-copy" aria-hidden="true"></i> Duplicate Rows
+                  </button>
+                </div>
+              </div>
+              <!-- XLSX export dropdown -->
+              <div class="export-dropdown" id="xlsx-dropdown-wrap">
+                <button type="button" class="btn btn-secondary btn-sm export-dropdown-toggle" id="btn-export-xlsx" aria-haspopup="true" aria-expanded="false">
+                  <i class="fa-solid fa-file-excel" aria-hidden="true"></i> XLSX <i class="fa-solid fa-chevron-down" style="font-size:0.65rem; margin-left:2px;" aria-hidden="true"></i>
+                </button>
+                <div class="export-dropdown-menu" id="xlsx-dropdown-menu" role="menu">
+                  <button type="button" class="export-dropdown-item" data-format="xlsx" data-status="" role="menuitem">
+                    <i class="fa-solid fa-table" aria-hidden="true"></i> All Rows
+                  </button>
+                  <button type="button" class="export-dropdown-item" data-format="xlsx" data-status="invalid" role="menuitem">
+                    <i class="fa-solid fa-circle-xmark" aria-hidden="true"></i> Invalid Rows
+                  </button>
+                  <button type="button" class="export-dropdown-item" data-format="xlsx" data-status="duplicate" role="menuitem">
+                    <i class="fa-solid fa-copy" aria-hidden="true"></i> Duplicate Rows
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -166,35 +191,55 @@ export class BatchDetailView {
       });
     });
 
-    // Export buttons
-    this.container.querySelector('#btn-export-csv')?.addEventListener('click', async () => {
-      try {
-        ToastManager.info('Preparing CSV export...');
-        await ApiClient.exportRecords(this.uploadId, 'csv', this.activeStatusFilter || undefined);
-        ToastManager.success('CSV downloaded successfully.');
-      } catch (err) {
-        ToastManager.error(`Export failed: ${err instanceof Error ? err.message : String(err)}`);
-      }
+    // Export dropdowns � toggle open/close
+    const setupExportDropdown = (toggleId: string, menuId: string): void => {
+      const toggle = this.container.querySelector<HTMLButtonElement>(`#${toggleId}`);
+      const menu = this.container.querySelector<HTMLElement>(`#${menuId}`);
+      if (!toggle || !menu) return;
+
+      toggle.addEventListener('click', e => {
+        e.stopPropagation();
+        const isOpen = menu.classList.contains('open');
+        // Close all other dropdowns first
+        this.container.querySelectorAll('.export-dropdown-menu.open').forEach(m => m.classList.remove('open'));
+        this.container.querySelectorAll('.export-dropdown-toggle[aria-expanded="true"]').forEach(t => t.setAttribute('aria-expanded', 'false'));
+        if (!isOpen) {
+          menu.classList.add('open');
+          toggle.setAttribute('aria-expanded', 'true');
+        }
+      });
+    };
+
+    setupExportDropdown('btn-export-csv', 'csv-dropdown-menu');
+    setupExportDropdown('btn-export-xlsx', 'xlsx-dropdown-menu');
+
+    // Close dropdowns on outside click
+    document.addEventListener('click', () => {
+      this.container.querySelectorAll('.export-dropdown-menu.open').forEach(m => m.classList.remove('open'));
+      this.container.querySelectorAll('.export-dropdown-toggle[aria-expanded="true"]').forEach(t => t.setAttribute('aria-expanded', 'false'));
     });
 
-    this.container.querySelector('#btn-export-xlsx')?.addEventListener('click', async () => {
-      try {
-        ToastManager.info('Preparing Excel export...');
-        await ApiClient.exportRecords(this.uploadId, 'xlsx', this.activeStatusFilter || undefined);
-        ToastManager.success('Excel workbook downloaded successfully.');
-      } catch (err) {
-        ToastManager.error(`Export failed: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    });
+    // Export dropdown items
+    this.container.querySelectorAll<HTMLButtonElement>('.export-dropdown-item').forEach(item => {
+      item.addEventListener('click', async e => {
+        e.stopPropagation();
+        const format = item.dataset.format as 'csv' | 'xlsx';
+        const status = item.dataset.status || undefined;
+        const label = status ? `${status} rows` : 'all rows';
+        const fmtLabel = format.toUpperCase();
 
-    this.container.querySelector('#btn-export-invalid')?.addEventListener('click', async () => {
-      try {
-        ToastManager.info('Downloading invalid and duplicate rows...');
-        await ApiClient.downloadInvalidRows(this.uploadId);
-        ToastManager.success('Invalid rows workbook downloaded.');
-      } catch (err) {
-        ToastManager.error(`Download failed: ${err instanceof Error ? err.message : String(err)}`);
-      }
+        // Close dropdown
+        this.container.querySelectorAll('.export-dropdown-menu.open').forEach(m => m.classList.remove('open'));
+        this.container.querySelectorAll('.export-dropdown-toggle[aria-expanded="true"]').forEach(t => t.setAttribute('aria-expanded', 'false'));
+
+        try {
+          ToastManager.info(`Preparing ${fmtLabel} export (${label})...`);
+          await ApiClient.exportRecords(this.uploadId, format, status);
+          ToastManager.success(`${fmtLabel} export (${label}) downloaded successfully.`);
+        } catch (err) {
+          ToastManager.error(`Export failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      });
     });
 
     // Toggle event feed
@@ -339,28 +384,54 @@ export class BatchDetailView {
 
     // Live validation progress banner
     if (this.upload.status === 'validating' || this.upload.status === 'committing') {
-      progressEl.style.display = 'block';
       const pct = this.upload.status === 'committing' ? 95 : (this.upload.process_progress || 0);
-      progressEl.innerHTML = `
-        <div class="banner banner-info">
-          <span class="banner-icon"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i></span>
-          <div class="banner-content">
-            <div class="banner-title">
-              ${this.upload.status === 'committing' ? 'Onboarding Eligible Members...' : 'Validation In Progress...'}
-            </div>
-            <p style="font-size: 0.85rem; margin-bottom: 0.5rem;">
-              ${this.upload.status === 'committing'
-                ? 'Registering members with core banking and activating digital accounts.'
-                : `Checked ${this.upload.processed_rows} of ${this.upload.total_rows} rows against core banking records.`}
-            </p>
-            <div class="progress-container" style="height: 8px;">
-              <div class="progress-bar-fill animated" style="width: ${pct}%;"></div>
+      const processedRows = this.upload.processed_rows || 0;
+      const totalRows = this.upload.total_rows || 0;
+
+      // Only rebuild the banner HTML when first showing it; afterwards update in-place
+      const alreadyRendered = progressEl.querySelector('#live-validation-bar') !== null;
+      if (!alreadyRendered) {
+        progressEl.style.display = 'block';
+        progressEl.innerHTML = `
+          <div class="banner banner-info">
+            <span class="banner-icon"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i></span>
+            <div class="banner-content">
+              <div class="banner-title" id="live-validation-title">
+                ${this.upload.status === 'committing' ? 'Onboarding Eligible Members...' : 'Validation In Progress...'}
+              </div>
+              <p style="font-size: 0.85rem; margin-bottom: 0.5rem;" id="live-validation-desc">
+                ${this.upload.status === 'committing'
+                  ? 'Registering members with core banking and activating digital accounts.'
+                  : `Checked ${processedRows} of ${totalRows} rows against core banking records.`}
+              </p>
+              <div style="display: flex; justify-content: space-between; font-size: 0.8rem; font-weight: 600; margin-bottom: 0.3rem; font-variant-numeric: tabular-nums;">
+                <span id="live-validation-pct">${pct}%</span>
+                <span id="live-validation-rowcount" style="color: var(--info-text);">${processedRows} / ${totalRows} rows</span>
+              </div>
+              <div class="progress-container" style="height: 10px;">
+                <div class="progress-bar-fill animated" id="live-validation-bar" style="width: ${pct}%;"></div>
+              </div>
             </div>
           </div>
-        </div>
-      `;
+        `;
+      } else {
+        // In-place update � only touch the changing elements
+        const titleEl = progressEl.querySelector<HTMLElement>('#live-validation-title');
+        const descEl = progressEl.querySelector<HTMLElement>('#live-validation-desc');
+        const pctEl = progressEl.querySelector<HTMLElement>('#live-validation-pct');
+        const rowEl = progressEl.querySelector<HTMLElement>('#live-validation-rowcount');
+        const barEl = progressEl.querySelector<HTMLElement>('#live-validation-bar');
+        if (titleEl) titleEl.textContent = this.upload.status === 'committing' ? 'Onboarding Eligible Members...' : 'Validation In Progress...';
+        if (descEl) descEl.textContent = this.upload.status === 'committing'
+          ? 'Registering members with core banking and activating digital accounts.'
+          : `Checked ${processedRows} of ${totalRows} rows against core banking records.`;
+        if (pctEl) pctEl.textContent = `${pct}%`;
+        if (rowEl) rowEl.textContent = `${processedRows} / ${totalRows} rows`;
+        if (barEl) barEl.style.width = `${pct}%`;
+      }
     } else {
       progressEl.style.display = 'none';
+      progressEl.innerHTML = '';
     }
 
     // Review & commit banner
@@ -736,7 +807,24 @@ export class BatchDetailView {
       if (p.percent !== undefined) this.upload.process_progress = p.percent;
 
       this.renderStats();
-      this.updateBanners();
+
+      // Update progress bar in-place if the validation banner is already rendered
+      const barEl = this.container.querySelector<HTMLElement>('#live-validation-bar');
+      const pctEl = this.container.querySelector<HTMLElement>('#live-validation-pct');
+      const rowEl = this.container.querySelector<HTMLElement>('#live-validation-rowcount');
+      const descEl = this.container.querySelector<HTMLElement>('#live-validation-desc');
+      if (barEl && pctEl && rowEl) {
+        const pct = p.percent ?? (this.upload.process_progress || 0);
+        const processed = this.upload.processed_rows || 0;
+        const total = this.upload.total_rows || 0;
+        barEl.style.width = `${pct}%`;
+        pctEl.textContent = `${pct}%`;
+        rowEl.textContent = `${processed} / ${total} rows`;
+        if (descEl) descEl.textContent = `Checked ${processed} of ${total} rows against core banking records.`;
+      } else {
+        // Banner not yet rendered — do a full banner update
+        this.updateBanners();
+      }
     } else if (msg.event === 'validation_completed') {
       this.loadBatch();
     } else if (msg.event === 'commit_completed') {

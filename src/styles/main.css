@@ -1424,3 +1424,69 @@ body {
   border-color: var(--primary);
 }
 
+
+/* ============================================================
+   Export dropdown split-button
+   ============================================================ */
+.export-dropdown {
+  position: relative;
+  display: inline-flex;
+}
+
+.export-dropdown-menu {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 200;
+  min-width: 160px;
+  background: #ffffff;
+  border: 1px solid var(--neutral-200);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  padding: 0.3rem 0;
+  overflow: hidden;
+}
+
+.export-dropdown-menu.open {
+  display: block;
+}
+
+.export-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.5rem 0.9rem;
+  background: none;
+  border: none;
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  color: var(--neutral-800);
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--transition-fast);
+}
+
+.export-dropdown-item:hover {
+  background-color: var(--neutral-100);
+  color: var(--primary);
+}
+
+.export-dropdown-item i {
+  width: 14px;
+  text-align: center;
+  color: var(--neutral-500);
+}
+
+.export-dropdown-item:hover i {
+  color: var(--primary);
+}
+
+/* ============================================================
+   Reason / Findings column wrapping
+   ============================================================ */
+.cell-reason {
+  white-space: normal !important;
+  min-width: 180px;
+}
