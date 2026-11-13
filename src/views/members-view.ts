@@ -14,37 +14,71 @@ export class MembersView {
 
   public async render(): Promise<HTMLElement> {
     this.container.innerHTML = `
-      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+      <div>
+        <h2 style="font-size: 1.6rem; font-weight: 700; color: var(--neutral-900);">Onboarded Members Directory</h2>
+        <p style="color: var(--neutral-500); font-size: 0.9rem; margin-top: 0.2rem;">
+          Bank members who have been successfully reviewed and activated in digital banking.
+        </p>
+      </div>
+  
+      <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh-members">
+        <i class="fa-solid fa-rotate-right" aria-hidden="true"></i> Refresh
+      </button>
+    </div>
+  
+    <div class="card">
+      <div class="card-header">
         <div>
-          <h2 style="font-size: 1.6rem; font-weight: 700; color: var(--neutral-900);">Onboarded Members Directory</h2>
-          <p style="color: var(--neutral-500); font-size: 0.9rem; margin-top: 0.2rem;">
-            Bank members who have been successfully reviewed and activated in digital banking.
-          </p>
+          <h3 class="card-title">Active Digital Banking Members</h3>
+          <p class="card-subtitle">Search by name, ID, phone, or member number; sort and inspect accounts</p>
         </div>
-
-        <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh-members">
-          <i class="fa-solid fa-rotate-right" aria-hidden="true"></i> Refresh
+      </div>
+  
+      <!-- Inline Search -->
+      <div style="margin-bottom: 1rem; display: flex; align-items: center; gap: 1rem; padding: 0 1rem;">
+        <select id="column-select" style="padding: 0.5rem; border: 1px solid var(--neutral-300); border-radius: 4px;">
+          <option value="0">Member #</option>
+          <option value="1">First Name</option>
+          <option value="2">Last Name</option>
+          <option value="3">National ID</option>
+          <option value="4">Phone Number</option>
+          <option value="5">Branch</option>
+          <option value="6">Account Type</option>
+          <option value="7">Account Number</option>
+          <option value="8">Onboarded At</option>
+        </select>
+        <select id="operand-select" style="padding: 0.5rem; border: 1px solid var(--neutral-300); border-radius: 4px;">
+          <option value="contains">Contains</option>
+          <option value="equals">Equals</option>
+        </select>
+        <input type="text" id="search-value" placeholder="Enter value" style="padding: 0.5rem; border: 1px solid var(--neutral-300); border-radius: 4px; width: 200px;" />
+        <button id="apply-search" style="padding: 0.5rem 1rem; background-color: var(--primary); color: white; border: none; border-radius: 4px; cursor: pointer;">
+          Search
         </button>
       </div>
-
-      <div class="card">
-        <div class="card-header">
-          <div>
-            <h3 class="card-title">Active Digital Banking Members</h3>
-            <p class="card-subtitle">Search by name, ID, phone, or member number; sort and inspect accounts</p>
-          </div>
+  
+      <div class="card-body" id="table-slot" style="padding-top: 1rem;">
+        <div id="members-table-loading" style="text-align: center; padding: 3rem 1rem; color: var(--neutral-500);">
+          <i class="fa-solid fa-spinner fa-spin" style="font-size: 1.5rem; margin-bottom: 0.5rem; display: block;"></i>
+          <span>Loading members...</span>
         </div>
-
-        <div class="card-body" id="table-slot" style="padding-top: 1rem;">
-          <div id="members-table-loading" style="text-align: center; padding: 3rem 1rem; color: var(--neutral-500);">
-            <i class="fa-solid fa-spinner fa-spin" style="font-size: 1.5rem; margin-bottom: 0.5rem; display: block;"></i>
-            <span>Loading members...</span>
-          </div>
-          <table id="members-table" class="display nowrap dataTable" style="width: 100%; display: none;"></table>
-        </div>
+        <table id="members-table" class="display wrap dataTable" style="width: 100%; display: none;"></table>
       </div>
-    `;
-
+    </div>
+  `;
+  
+  // Add event listener for the inline search
+  this.container.querySelector('#apply-search')?.addEventListener('click', () => {
+    const column = (this.container.querySelector('#column-select') as HTMLSelectElement).value;
+    const operand = (this.container.querySelector('#operand-select') as HTMLSelectElement).value;
+    const value = (this.container.querySelector('#search-value') as HTMLInputElement).value;
+  
+    if (this.dt) {
+      // Apply the search logic
+      this.dt.column(parseInt(column)).search(operand === 'contains' ? value : `^${value}$`, true, false).draw();
+    }
+  });
     this.container.querySelector('#btn-refresh-members')?.addEventListener('click', () => {
       this.loadMembers();
     });
@@ -94,13 +128,17 @@ export class MembersView {
       setTimeout(() => this.initDataTable(tableEl, data), 100);
       return;
     }
-
+  
+    // Initialize DataTable
     this.dt = new DataTable(tableEl, {
       data,
       pageLength: 20,
       lengthMenu: [10, 20, 50, 100],
       order: [[7, 'desc']],
       responsive: true,
+      scrollY: '600px',
+   // Add inline search
+
       columns: [
         {
           title: 'Member #',
@@ -110,10 +148,14 @@ export class MembersView {
           render: (val: string) => `<span style="color: var(--primary);">${escapeHtml(val)}</span>`
         },
         {
-          title: 'Full Name',
-          data: null,
+          title: 'First Name',
+          data: 'first_name',
           className: 'cell-bold',
-          render: (_data: unknown, _type: string, row: Member) => escapeHtml(`${row.first_name} ${row.last_name}`)
+        },
+        {
+          title: 'Last Name',
+          data: 'last_name',
+          className: 'cell-bold',
         },
         {
           title: 'National ID',
@@ -166,7 +208,17 @@ export class MembersView {
         zeroRecords: 'No members matched your search criteria.'
       }
     });
+   
 
+    // Move pagination to the right
+const paginateEl = tableEl.parentElement?.querySelector('.dataTables_paginate');
+if (paginateEl) {
+  paginateEl.classList.add('text-end'); // Add Bootstrap class to align to the right
+}
+  
+  
+  
+    // Handle row click events
     tableEl.addEventListener('click', (e: MouseEvent) => {
       const target = e.target as HTMLElement;
       const tr = target.closest('tr');
@@ -178,6 +230,7 @@ export class MembersView {
       }
     });
   }
+  
 
   public destroy(): void {
     if (this.dt) {

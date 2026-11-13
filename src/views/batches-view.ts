@@ -76,6 +76,24 @@ export class BatchesView {
             <p class="card-subtitle">Search, filter by status, sort by date, and open batches</p>
           </div>
 
+ <!-- Inline Search -->
+      <div style="margin-bottom: 1rem; display: flex; align-items: center; gap: 1rem; padding: 0 1rem;">
+        <select id="column-select" style="padding: 0.5rem; border: 1px solid var(--neutral-300); border-radius: 4px;">
+          <option value="0">Batch Name & File</option>
+          <option value="1">Status</option>
+          <option value="2">Progress</option>
+          <option value="3">Updated At</option>
+        </select>
+        <select id="operand-select" style="padding: 0.5rem; border: 1px solid var(--neutral-300); border-radius: 4px;">
+          <option value="contains">Contains</option>
+          <option value="equals">Equals</option>
+        </select>
+        <input type="text" id="search-value" placeholder="Enter value" style="padding: 0.5rem; border: 1px solid var(--neutral-300); border-radius: 4px; width: 200px;" />
+        <button id="apply-search" style="padding: 0.5rem 1rem; background-color: var(--primary); color: white; border: none; border-radius: 4px; cursor: pointer;">
+          Search
+        </button>
+      </div>
+  
           <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
             <select class="filter-select" id="batches-status-filter" aria-label="Filter batches by status">
               <option value="">All Statuses</option>
@@ -100,11 +118,23 @@ export class BatchesView {
             <i class="fa-solid fa-spinner fa-spin" style="font-size: 1.5rem; margin-bottom: 0.5rem; display: block;"></i>
             <span>Loading batches...</span>
           </div>
-          <table id="batches-table" class="display nowrap dataTable" style="width: 100%; display: none;"></table>
+          <table id="batches-table" class="display wrap dataTable" style="width: 100%; display: none;"></table>
         </div>
       </div>
     `;
 
+    this.container.querySelector('#apply-search')?.addEventListener('click', () => {
+      const column = (this.container.querySelector('#column-select') as HTMLSelectElement).value;
+      const operand = (this.container.querySelector('#operand-select') as HTMLSelectElement).value;
+      const value = (this.container.querySelector('#search-value') as HTMLInputElement).value;
+    
+      if (this.dt) {
+        // Apply the search logic
+        this.dt.column(parseInt(column)).search(operand === 'contains' ? value : `^${value}$`, true, false).draw();
+      }
+    });
+
+    
     this.container.querySelector('#btn-create-batch-view')?.addEventListener('click', () => {
       NewBatchModal.open();
     });
@@ -174,6 +204,7 @@ export class BatchesView {
       lengthMenu: [10, 15, 25, 50, 100],
       order: [[4, 'desc']],
       responsive: true,
+      scrollY: '600px',
       columns: [
         {
           title: 'Batch Name & File',

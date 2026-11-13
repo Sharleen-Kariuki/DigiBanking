@@ -1490,3 +1490,134 @@ body {
   white-space: normal !important;
   min-width: 180px;
 }
+
+
+/* =========================================
+   BATCH RECORD STATUS FILTER TABS
+========================================= */
+
+.filter-tabs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* Base tab styling */
+.filter-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.85rem;
+  border: 1px solid var(--neutral-200);
+  border-radius: 6px;
+  background: #ffffff;
+  color: var(--neutral-600);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+/* Count badge */
+.filter-tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 21px;
+  height: 21px;
+  padding: 0 5px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+/* ALL */
+.filter-tab[data-status=""] {
+  color: var(--neutral-700);
+}
+
+.filter-tab[data-status=""].active {
+  background: var(--neutral-100);
+  border-color: var(--neutral-400);
+}
+
+/* VALID - GREEN */
+.filter-valid {
+  color: #15803d;
+}
+
+.filter-valid .filter-tab-count {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.filter-valid.active {
+  background: #dcfce7;
+  border-color: #16a34a;
+  color: #166534;
+}
+
+/* ONBOARDED - GREEN */
+.filter-onboarded {
+  color: #15803d;
+}
+
+.filter-onboarded .filter-tab-count {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.filter-onboarded.active {
+  background: #dcfce7;
+  border-color: #16a34a;
+  color: #166534;
+}
+
+/* INVALID - RED */
+.filter-invalid {
+  color: #dc2626;
+}
+
+.filter-invalid .filter-tab-count {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.filter-invalid.active {
+  background: #fee2e2;
+  border-color: #dc2626;
+  color: #991b1b;
+}
+
+/* DUPLICATE - ORANGE */
+.filter-duplicate {
+  color: #c2410c;
+}
+
+.filter-duplicate .filter-tab-count {
+  background: #ffedd5;
+  color: #9a3412;
+}
+
+.filter-duplicate.active {
+  background: #ffedd5;
+  border-color: #ea580c;
+  color: #9a3412;
+}
+
+/* Hover */
+.filter-tab:hover {
+  filter: brightness(0.96);
+}
+
+/* Active tab */
+.filter-tab.active {
+  font-weight: 700;
+}
+
+/* Focus accessibility */
+.filter-tab:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}

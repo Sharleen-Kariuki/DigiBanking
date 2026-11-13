@@ -4,6 +4,7 @@ import { ChunkedUploader } from '../services/chunked-uploader';
 import { UploadSession, UploadRecord, PaginatedResponse } from '../types';
 import { ToastManager } from '../components/toast';
 import { Modal } from '../components/modal';
+import '../styles/main.css';
 
 export class BatchDetailView {
   private uploadId: string;
@@ -98,14 +99,34 @@ export class BatchDetailView {
             <p class="card-subtitle">Inspect individual records, search in real-time, filter status, and export results</p>
           </div>
 
-          <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
-            <div class="filter-tabs" id="status-filter-tabs">
-              <button type="button" class="filter-tab active" data-status="">All <span class="filter-tab-count" id="count-all">0</span></button>
-              <button type="button" class="filter-tab" data-status="valid">Valid <span class="filter-tab-count" id="count-valid">0</span></button>
-              <button type="button" class="filter-tab" data-status="onboarded">Onboarded <span class="filter-tab-count" id="count-onboarded">0</span></button>
-              <button type="button" class="filter-tab" data-status="invalid">Invalid <span class="filter-tab-count" id="count-invalid">0</span></button>
-              <button type="button" class="filter-tab" data-status="duplicate">Duplicate <span class="filter-tab-count" id="count-duplicate">0</span></button>
-            </div>
+          <div class="filter-tabs" id="status-filter-tabs">
+
+  <button type="button" class="filter-tab active" data-status="">
+    All
+    <span class="filter-tab-count" id="count-all">0</span>
+  </button>
+
+  <button type="button" class="filter-tab filter-valid" data-status="valid">
+    Valid
+    <span class="filter-tab-count" id="count-valid">0</span>
+  </button>
+
+  <button type="button" class="filter-tab filter-onboarded" data-status="onboarded">
+    Onboarded
+    <span class="filter-tab-count" id="count-onboarded">0</span>
+  </button>
+
+  <button type="button" class="filter-tab filter-invalid" data-status="invalid">
+    Invalid
+    <span class="filter-tab-count" id="count-invalid">0</span>
+  </button>
+
+  <button type="button" class="filter-tab filter-duplicate" data-status="duplicate">
+    Duplicate
+    <span class="filter-tab-count" id="count-duplicate">0</span>
+  </button>
+
+</div>
 
             <div style="display: flex; gap: 0.4rem; align-items: center;">
               <!-- CSV export dropdown -->
@@ -145,7 +166,28 @@ export class BatchDetailView {
             </div>
           </div>
         </div>
-
+ <!-- Inline Search -->
+      <div style="margin: 1rem; display: flex; align-items: center; gap: 1rem; padding: 0 1rem;">
+        <select id="column-select" style="padding: 0.5rem; border: 1px solid var(--neutral-300); border-radius: 4px;">
+          <option value="0">Member #</option>
+          <option value="1">First Name</option>
+          <option value="2">Last Name</option>
+          <option value="3">National ID</option>
+          <option value="4">Phone Number</option>
+          <option value="5">Branch</option>
+          <option value="6">Account Type</option>
+          <option value="7">Account Number</option>
+          <option value="8">Onboarded At</option>
+        </select>
+        <select id="operand-select" style="padding: 0.5rem; border: 1px solid var(--neutral-300); border-radius: 4px;">
+          <option value="contains">Contains</option>
+          <option value="equals">Equals</option>
+        </select>
+        <input type="text" id="search-value" placeholder="Enter value" style="padding: 0.5rem; border: 1px solid var(--neutral-300); border-radius: 4px; width: 200px;" />
+        <button id="apply-search" style="padding: 0.5rem 1rem; background-color: var(--primary); color: white; border: none; border-radius: 4px; cursor: pointer;">
+          Search
+        </button>
+      </div>
         <div class="card-body" id="records-table-slot" style="padding-top: 1rem;">
           <div id="records-table-loading" style="text-align: center; padding: 3rem 1rem; color: var(--neutral-500);">
             <i class="fa-solid fa-spinner fa-spin" style="font-size: 1.5rem; margin-bottom: 0.5rem; display: block;"></i>
@@ -173,6 +215,17 @@ export class BatchDetailView {
       </div>
     `;
 
+    this.container.querySelector('#apply-search')?.addEventListener('click', () => {
+      const column = (this.container.querySelector('#column-select') as HTMLSelectElement).value;
+      const operand = (this.container.querySelector('#operand-select') as HTMLSelectElement).value;
+      const value = (this.container.querySelector('#search-value') as HTMLInputElement).value;
+    
+      if (this.dt) {
+        // Apply the search logic
+        this.dt.column(parseInt(column)).search(operand === 'contains' ? value : `^${value}$`, true, false).draw();
+      }
+    });
+
     this.bindEvents();
     // Mount UI immediately and load data asynchronously so router never hangs
     void this.loadBatch();
@@ -191,7 +244,7 @@ export class BatchDetailView {
       });
     });
 
-    // Export dropdowns � toggle open/close
+    // Export dropdowns toggle open/close
     const setupExportDropdown = (toggleId: string, menuId: string): void => {
       const toggle = this.container.querySelector<HTMLButtonElement>(`#${toggleId}`);
       const menu = this.container.querySelector<HTMLElement>(`#${menuId}`);
@@ -415,7 +468,7 @@ export class BatchDetailView {
           </div>
         `;
       } else {
-        // In-place update � only touch the changing elements
+        // In-place update only touch the changing elements
         const titleEl = progressEl.querySelector<HTMLElement>('#live-validation-title');
         const descEl = progressEl.querySelector<HTMLElement>('#live-validation-desc');
         const pctEl = progressEl.querySelector<HTMLElement>('#live-validation-pct');
@@ -573,6 +626,7 @@ export class BatchDetailView {
       lengthMenu: [10, 20, 50, 100],
       order: [[0, 'asc']],
       responsive: true,
+      scrollY: '600px',
       columns: [
         {
           title: 'Row',
